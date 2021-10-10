@@ -78,6 +78,7 @@ def _hparams_for_method(method_id):
 
         if method_id == methods.METHOD_MITHRAL:
             lut_work_consts = (2, 4, -1)
+            lut_work_consts = (-1,)
             # lut_work_consts = [-1] # TODO rm
             params = []
             for m in mvals:
@@ -298,8 +299,8 @@ def _fitted_est_for_hparams(method_id, hparams_dict, X_train, W_train,
 
 # def _main(tasks, methods=['SVD'], saveas=None, ntasks=None,
 def _main(tasks_func, methods=None, saveas=None, ntasks=None,
-          verbose=1, limit_ntasks=-1, compression_metrics=False, # TODO uncomment below
-          # verbose=3, limit_ntasks=-1, compression_metrics=False,
+          #verbose=1, limit_ntasks=-1, compression_metrics=False, # TODO uncomment below
+          verbose=4, limit_ntasks=-1, compression_metrics=False,
           tasks_all_same_shape=False):
     methods = methods.DEFAULT_METHODS if methods is None else methods
     if isinstance(methods, str):
@@ -430,9 +431,14 @@ def main_cifar100(methods=methods.USE_METHODS, saveas='cifar100'):
 
 
 def main_all(methods=methods.USE_METHODS):
+    print(methods)
+    methods = ("Vingilote",)
+    methods = ("Mithral", "Vingilote",)
+    #exit(0)
     main_cifar10(methods=methods)
     main_cifar100(methods=methods)
     main_caltech(methods=methods)
+    main_ucr(methods=methods)
 
 
 def main():
