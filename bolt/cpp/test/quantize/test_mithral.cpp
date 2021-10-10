@@ -310,6 +310,8 @@ void _test_mithral_scan_tiled(int nblocks, int ncodebooks, int nout=1) {
 }
 
 TEST_CASE("mithral scan tiled", "[mithral][scan]") {
+	printf("hey");
+	exit(0);
 
     SECTION("One output column") {
         _test_mithral_scan_tiled(1, 4);
