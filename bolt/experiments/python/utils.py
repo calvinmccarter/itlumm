@@ -6,7 +6,7 @@ from sklearn import cluster
 from scipy import signal
 # import types
 
-import kmc2  # state-of-the-art kmeans initialization (as of NIPS 2016)
+#import kmc2  # state-of-the-art kmeans initialization (as of NIPS 2016)
 
 from joblib import Memory
 _memory = Memory('.', verbose=0)

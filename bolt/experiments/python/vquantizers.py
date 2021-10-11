@@ -623,6 +623,51 @@ class MithralEncoder(MultiCodebookEncoder):
         return luts, 0, 1
 
 
+class VingiloteEncoder(MultiCodebookEncoder):
+
+    def __init__(self, ncodebooks, lut_work_const=-1):
+        super().__init__(
+            ncodebooks=ncodebooks, ncentroids=16,
+            # quantize_lut=True, upcast_every=64,
+            # quantize_lut=True, upcast_every=32,
+            quantize_lut=True, upcast_every=16,
+            # quantize_lut=True, upcast_every=8,
+            # quantize_lut=True, upcast_every=4,
+            # quantize_lut=True, upcast_every=2,
+            # quantize_lut=True, upcast_every=1,
+            accumulate_how='mean')
+        self.lut_work_const = lut_work_const
+
+    def name(self):
+        return "{}_{}".format('mithral', super().name())
+
+    def params(self):
+        return {'ncodebooks': self.ncodebooks,
+                'lut_work_const': self.lut_work_const}
+
+    def fit(self, X, Q=None):
+        # Q = B.T, where A is (N, D) and B is (D, M). So Q is (M, D)
+        self.splits_lists, self.centroids = clusterize.learn_vingilote(
+            X, Q, self.ncodebooks)
+        # self._learn_lut_quantization(X, Q)
+
+    def encode_X(self, X):
+        idxs = clusterize.mithral_encode(X, self.splits_lists)
+        return idxs + self.offsets
+
+    def encode_Q(self, Q, quantize=True):
+        Q = np.atleast_2d(Q)
+        luts = np.zeros((Q.shape[0], self.ncodebooks, self.ncentroids))
+        for i, q in enumerate(Q):
+            luts[i] = clusterize.mithral_lut(q, self.centroids)
+        if self.quantize_lut:
+            luts, offset, scale = _mithral_quantize_luts(luts, self.lut_work_const)
+            return luts, offset, scale
+
+        return luts, 0, 1
+
+
+
 def main():
     X = np.ones((3, 75), dtype=np.int)
     _insert_zeros(X, 53)

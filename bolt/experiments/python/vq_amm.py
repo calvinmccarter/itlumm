@@ -269,6 +269,61 @@ class OldMithralPQ(PQMatmul):
         nlookups = N * M * self.ncodebooks
         return {amm.KEY_NMULTIPLIES: nmuls, KEY_NLOOKUPS: nlookups}
 
+class VingiloteMatmul(VQMatmul):
+
+    def __init__(self, ncodebooks, lut_work_const=-1):
+        self.lut_work_const = lut_work_const
+        if (lut_work_const is not None) and (lut_work_const > 0) and (
+                lut_work_const > ncodebooks):
+            raise amm.InvalidParametersException(
+                "lut_work_const > ncodebooks: {} > {}".format(
+                    lut_work_const, ncodebooks))
+        super().__init__(ncodebooks=ncodebooks, ncentroids=16)
+
+    # def _get_ncentroids(self):
+    #     return 16
+
+    # def fit(self, A, B, Y=None):
+    #     super().fit(self, A, B, Y=Y)
+
+    def _create_encoder(self, ncodebooks):
+        return vq.VingiloteEncoder(
+            ncodebooks=ncodebooks, lut_work_const=self.lut_work_const)
+
+    def get_params(self):
+        return {'ncodebooks': self.ncodebooks,
+                'lut_work_const': self.lut_work_const}
+
+    def get_speed_metrics(self, A, B, fixedA=False, fixedB=False):
+        N, D = A.shape
+        D, M = B.shape
+        # data encoding and LUT costs
+        nmuls = 0
+        nmuls += 0 if fixedA else N * D  # offset + scale before quantize
+        nmuls_per_codebook_per_output = self.ncentroids * D
+        nmuls_per_output = nmuls_per_codebook_per_output * self.ncodebooks
+        nmuls += 0 if fixedB else nmuls_per_output * M
+        # lookups given encoded data + luts
+        nlookups = N * M * self.ncodebooks
+        return {amm.KEY_NMULTIPLIES: nmuls, KEY_NLOOKUPS: nlookups}
+
+    def set_B(self, B):
+        self.luts, self.offset, self.scale = self.enc.encode_Q(B.T)
+
+    def __call__(self, A, B):
+        if self.A_enc is None:
+            self.set_A(A)
+            # ***
+            # self.set_A(A) just does this:
+            # self.A_enc = self.enc.encode_X(A)
+            # ***
+
+        if self.luts is None:
+            self.set_B(B)
+        return self.enc.dists_enc(self.A_enc, self.luts,
+                                  offset=self.offset, scale=self.scale)
+
+
 
 class MithralMatmul(VQMatmul):
 

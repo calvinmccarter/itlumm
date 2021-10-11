@@ -5,8 +5,10 @@ import numpy as np
 from functools import reduce
 
 import numba
+import torch
 from sklearn.decomposition import PCA
 from sklearn import linear_model
+from torchmin import minimize
 
 from . import subspaces as subs
 
@@ -887,16 +889,72 @@ def _densify_X_enc(X_enc, K=16):
 def _fit_ridge_enc(X_enc=None, Y=None, K=16, lamda=1, X_bin=None):
     if X_bin is None:
         X_bin = _densify_X_enc(X_enc, K=K)
-    est = linear_model.ridge.Ridge(fit_intercept=False, alpha=lamda)
+    est = linear_model.Ridge(fit_intercept=False, alpha=lamda)
     est.fit(X_bin, Y)
-    return est.coef_.T
+    # return est.coef_.T
+    sk_result = est.coef_.T
+    """
+    G = torch.from_numpy(X_bin.astype(np.float32))
+    A_res = torch.from_numpy(Y)
+    def maddness_obj(P_delta):
+        err = A_res - torch.matmul(G, P_delta)
+        loss = (
+            torch.sum(torch.square(err)) + 
+            lamda*torch.sum(torch.square(P_delta))
+        )
+        return loss
+    P_delta_init = torch.zeros(*(sk_result.shape))
+    res = minimize(
+        maddness_obj, P_delta_init, method='l-bfgs',
+        max_iter=50, disp=2)
+    torch_result = res.x.numpy()
+    sk_vs_torch = np.mean((sk_result - torch_result) ** 2)
+    print(f"result.shape:{torch_result.shape} diffmse:{sk_vs_torch}")
+    """
+    return sk_result
 
 
+def encoded_vingilote(X_orig, all_centroids, Y, X_enc=None, X_bin=None, B=None, K=16, lamda=1.0):
+    """
+    X_orig: 
+    """
+    if X_bin is None:
+        X_bin = _densify_X_enc(X_enc, K=K)
+
+    #est = linear_model.Ridge(fit_intercept=False, alpha=lamda)
+    #est.fit(X_bin, Y)
+    #P_1_np = est.coef_.T
+    #P_1 = torch.from_numpy(P_1_np)
+
+    P_0 = all_centroids.reshape(X_bin.shape[1], Y.shape[1])
+
+    G_np = X_bin.astype(np.float32)
+    G = torch.from_numpy(G_np)
+    R_np = X_orig @ B - G_np @ P_0 @ B
+    R = torch.from_numpy(R_np)
+    B_torch = torch.from_numpy(B)
+    def vingilote_obj(P_delta):
+        err = R - G @ P_delta @ B_torch
+        loss = (
+            torch.sum(torch.square(err)) +
+            lamda*torch.sum(torch.square(P_delta))
+        )
+        return loss
+    P_delta_init = torch.zeros(*(P_0.shape))
+    res = minimize(
+        vingilote_obj, P_delta_init, method='l-bfgs',
+        max_iter=100, disp=0)
+    torch_result = res.x.numpy()
+    return torch_result
+
+ 
 def encoded_lstsq(X_enc=None, X_bin=None, Y=None, K=16, XtX=None, XtY=None,
                   precondition=True, stable_ridge=True):
 
     if stable_ridge:
         return _fit_ridge_enc(X_enc=X_enc, Y=Y, X_bin=X_bin, K=K, lamda=1)
+    print("not doing sklearn")
+    exit(0)
 
     if XtX is None:
         XtX = _XtX_encoded(X_enc, K=K).astype(np.float32)
@@ -1422,6 +1480,55 @@ def _learn_mithral_initialization(X, ncodebooks,
 
 
 @_memory.cache
+def learn_vingilote(
+    X, Q, ncodebooks, return_buckets=False, **kwargs,
+):
+    N, D = X.shape  # A
+    M, DQ = Q.shape  # B^T
+    print(f"learn_vingilote with N:{N} D:{D} M:{M} DQ:{DQ}")
+    
+    ncentroids_per_codebook = 16
+    X_orig = X.astype(np.float32)
+
+    X_res0, all_splits0, all_centroids0, all_buckets0 = \
+        _learn_mithral_initialization(X, ncodebooks, pq_perm_algo='start')
+
+    mse_orig = (X_orig * X_orig).mean()
+    mse0 = (X_res0 * X_res0).mean()
+    print("X_res mse / X mse: ", mse0 / mse_orig)
+
+    used_perm_algo = 'start'
+    X_res, all_splits, all_centroids, all_buckets = (
+        X_res0, all_splits0, all_centroids0, all_buckets0)
+
+    # optimize centroids discriminatively conditioned on assignments
+    X_enc = mithral_encode(X, all_splits)
+
+    print("vingilote fitting dense lstsq to X_res")
+    print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
+    # W = encoded_lstsq(X_enc=X_enc, Y=X_res)
+
+    W = encoded_vingilote(
+        X_orig=X_orig, all_centroids=all_centroids, Y=X_res, X_enc=X_enc, B=Q.T)
+    print(f"vingilote fitted dense lstsq with W:{W.shape}")
+
+    all_centroids_delta = W.reshape(ncodebooks, ncentroids_per_codebook, D)
+    all_centroids += all_centroids_delta
+
+    # check how much improvement we got
+    X_res -= _XW_encoded(X_enc, W)  # if we fit to X_res
+    mse_res = (X_res * X_res).mean()
+    print("X_res mse / X mse after lstsq: ", mse_res / mse_orig)
+    # print("min, median, max, std, of all centroids after lstsq:\n",
+    #       all_centroids.min(), np.median(all_centroids),
+    #       all_centroids.max(), all_centroids.std())
+
+    if return_buckets:
+        return all_splits, all_centroids, all_buckets
+    return all_splits, all_centroids
+
+
+@_memory.cache
 def learn_mithral(X, ncodebooks, return_buckets=False,
                   lut_work_const=-1, **kwargs):
     N, D = X.shape
@@ -1474,11 +1581,19 @@ def learn_mithral(X, ncodebooks, return_buckets=False,
         #
         if lut_work_const < 0:
             print("fitting dense lstsq to X_res")
+            print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
             W = encoded_lstsq(X_enc=X_enc, Y=X_res)
+            print(f"fitted dense lstsq with W:{W.shape}")
+            #exit(0)
         else:
+            print("fitting sparse lstsq to X_res")
+            print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
+ 
             W, _ = sparse_encoded_lstsq(
                     X_enc, X_res, nnz_blocks=lut_work_const,
                     pq_perm_algo=used_perm_algo)
+            print(f"fitted sparse lstsq with W:{W.shape}")
+            #exit(0)
 
         all_centroids_delta = W.reshape(ncodebooks, ncentroids_per_codebook, D)
         all_centroids += all_centroids_delta

@@ -78,6 +78,7 @@ def _hparams_for_method(method_id):
 
         if method_id == methods.METHOD_MITHRAL:
             lut_work_consts = (2, 4, -1)
+            lut_work_consts = (-1,)
             # lut_work_consts = [-1] # TODO rm
             params = []
             for m in mvals:
@@ -86,7 +87,7 @@ def _hparams_for_method(method_id):
             return params
 
         return [{'ncodebooks': m} for m in mvals]
-    if method_id in [methods.METHOD_EXACT, methods.METHOD_SCALAR_QUANTIZE]:
+    if method_id == methods.METHOD_EXACT:
         return [{}]
 
     raise ValueError(f"Unrecognized method: '{method_id}'")
@@ -109,21 +110,6 @@ def _compute_compression_metrics(ar):
     # ar /= (np.max(ar) / 65535)  # 16 bits
     # ar -= 32768  # center at 0
     # ar = ar.astype(np.int16)
-
-    # elem_sz = ar.dtype.itemsize
-    # return {'nbytes_raw': ar.nbytes,
-    #         'nbytes_blosc_noshuf': len(_blosc_compress(
-    #             ar, elem_sz=elem_sz, shuffle=blosc.NOSHUFFLE)),
-    #         'nbytes_blosc_byteshuf': len(_blosc_compress(
-    #             ar, elem_sz=elem_sz, shuffle=blosc.SHUFFLE)),
-    #         'nbytes_blosc_bitshuf': len(_blosc_compress(
-    #             ar, elem_sz=elem_sz, shuffle=blosc.BITSHUFFLE)),
-    #         'nbytes_zstd': len(_zstd_compress(ar)),
-    #         'nbits_cost': nbits_cost(ar).sum() // 8,
-    #         'nbits_cost_zigzag':
-    #             nbits_cost(zigzag_encode(ar), signed=False).sum() // 8,
-    #         'nbytes_sprintz': compress.sprintz_packed_size(ar)
-    #         }
 
     return {'nbytes_raw': ar.nbytes,
             'nbytes_sprintz': compress.sprintz_packed_size(ar)}
@@ -189,9 +175,6 @@ def _compute_metrics(task, Y_hat, compression_metrics=True, **sink):
             logits_orig = Y + b
             lbls_amm = np.argmax(logits_amm, axis=1).astype(np.int32)
             lbls_orig = np.argmax(logits_orig, axis=1).astype(np.int32)
-            # print("Y_hat shape : ", Y_hat.shape)
-            # print("lbls hat shape: ", lbls_amm.shape)
-            # print("lbls amm : ", lbls_amm[:20])
             metrics['acc_amm'] = np.mean(lbls_amm == lbls)
             metrics['acc_orig'] = np.mean(lbls_orig == lbls)
 
@@ -316,8 +299,8 @@ def _fitted_est_for_hparams(method_id, hparams_dict, X_train, W_train,
 
 # def _main(tasks, methods=['SVD'], saveas=None, ntasks=None,
 def _main(tasks_func, methods=None, saveas=None, ntasks=None,
-          verbose=1, limit_ntasks=-1, compression_metrics=False, # TODO uncomment below
-          # verbose=3, limit_ntasks=-1, compression_metrics=False,
+          #verbose=1, limit_ntasks=-1, compression_metrics=False, # TODO uncomment below
+          verbose=4, limit_ntasks=-1, compression_metrics=False,
           tasks_all_same_shape=False):
     methods = methods.DEFAULT_METHODS if methods is None else methods
     if isinstance(methods, str):
@@ -417,35 +400,9 @@ def _main(tasks_func, methods=None, saveas=None, ntasks=None,
                     dedup_cols=independent_vars)
 
 
-# def main_ecg(methods=None, saveas='ecg', limit_nhours=1):
-#     tasks = md.load_ecg_tasks(limit_nhours=limit_nhours)
-#     return _main(tasks=tasks, methods=methods, saveas=saveas, ntasks=139,
-#                  # limit_ntasks=10, compression_metrics=False)
-#                  limit_ntasks=5, compression_metrics=True)
-
-
 def main_caltech(methods=methods.USE_METHODS, saveas='caltech',
                  limit_ntasks=-1, limit_ntrain=-1, filt='sobel'):
-    # tasks = md.load_caltech_tasks()
-    # tasks = md.load_caltech_tasks(limit_ntrain=100e3, limit_ntest=10e3) # TODO rm after debug
-    # tasks = md.load_caltech_tasks(limit_ntrain=-1, limit_ntest=10e3) # TODO rm after debug
-    # tasks = md.load_caltech_tasks(limit_ntrain=100e3)
-    # tasks = md.load_caltech_tasks(limit_ntrain=500e3)
-    # tasks = md.load_caltech_tasks(limit_ntrain=1e6)  # does great
-    # tasks = md.load_caltech_tasks(limit_ntrain=15e5)
-    # tasks = md.load_caltech_tasks(limit_ntrain=17.5e5) # bad
-    # tasks = md.load_caltech_tasks(limit_ntrain=2e6)
-    # tasks = md.load_caltech_tasks(limit_ntrain=2.5e6)
-    # return _main(tasks=tasks, methods=methods, saveas=saveas,
-    # limit_ntasks = -1
-    # limit_ntasks = 10
-    # filt = 'sharpen5x5'
-    # filt = 'gauss5x5'
-    # filt = 'sobel'
     saveas = '{}_{}'.format(saveas, filt)
-    # saveas = '{}_{}'.format(saveas, filt)
-    # limit_ntrain = -1
-    # limit_ntrain = 500e3
     task_func = functools.partial(
         md.load_caltech_tasks, filt=filt, limit_ntrain=limit_ntrain)
     return _main(tasks_func=task_func, methods=methods,
@@ -455,10 +412,6 @@ def main_caltech(methods=methods.USE_METHODS, saveas='caltech',
 
 def main_ucr(methods=methods.USE_METHODS, saveas='ucr',
              k=128, limit_ntasks=None, problem='rbf'):
-    # limit_ntasks = 10
-    # limit_ntasks = 13
-    # tasks = md.load_ucr_tasks(limit_ntasks=limit_ntasks)
-    # k = 128
     tasks_func = functools.partial(
         md.load_ucr_tasks, limit_ntasks=limit_ntasks, k=k, problem=problem)
     saveas = '{}_k={}_problem={}'.format(saveas, k, problem)
@@ -468,69 +421,28 @@ def main_ucr(methods=methods.USE_METHODS, saveas='ucr',
 
 
 def main_cifar10(methods=methods.USE_METHODS, saveas='cifar10'):
-    # tasks = md.load_cifar10_tasks()
     return _main(tasks_func=md.load_cifar10_tasks, methods=methods,
                  saveas=saveas, ntasks=1)
 
 
 def main_cifar100(methods=methods.USE_METHODS, saveas='cifar100'):
-    # tasks = md.load_cifar100_tasks()
     return _main(tasks_func=md.load_cifar100_tasks, methods=methods,
                  saveas=saveas, ntasks=1)
 
 
 def main_all(methods=methods.USE_METHODS):
+    print(methods)
+    #methods = ("Vingilote",)
+    #methods = ("Vingilote",)
+    #exit(0)
     main_cifar10(methods=methods)
     main_cifar100(methods=methods)
-    # main_ecg(methods=methods)
     main_caltech(methods=methods)
+    main_ucr(methods=methods)
 
 
 def main():
-    # main_cifar10(methods='ScalarQuantize')
-    # main_cifar100(methods='ScalarQuantize')
-    # main_ucr(methods='ScalarQuantize')
-    main_caltech(methods='ScalarQuantize', filt='sobel')
-    main_caltech(methods='ScalarQuantize', filt='dog5x5')
-
-    # main_cifar10(methods='MithralPQ')
-    # main_cifar100(methods='Mithral')
-    # main_caltech(methods='Hadamard')
-    # main_cifar10(methods='MithralPQ')
-    # main_cifar100(methods='MithralPQ')
-    # main_ucr(methods='MithralPQ', k=64, limit_ntasks=5, problem='rbf')
-    # main_ucr(methods='Bolt', k=64, limit_ntasks=5, problem='softmax')
-
-    # rerun mithral stuff with fixed numerical issues
-    # main_cifar10(methods=['Mithral', 'MithralPQ'])
-    # main_cifar100(methods=['Mithral', 'MithralPQ'])
-    # main_ucr(methods=['Mithral', 'MithralPQ'], k=128, problem='rbf')
-    # main_caltech(methods=['Mithral', 'MithralPQ'], filt='sobel')
-    # main_caltech(methods=['Mithral', 'MithralPQ'], filt='dog5x5')
-
-    # #
-    # # TODO ideally run this too to put in appendix
-    # #
-    # use_methods = list(methods.USE_METHODS)
-    # use_methods.remove(methods.METHOD_SPARSE_PCA)
-    # main_ucr(methods=use_methods, k=128, problem='softmax')
-
-    # main_caltech('Mithral', filt='sobel', limit_ntrain=1e6, limit_ntasks=10)
-    # lim = 500e3
-    # lim = 2e6
-    # lim = -1
-    # lim = 4e6
-    # lim = 5e6
-    # main_caltech('Mithral', filt='sobel', limit_ntrain=lim, limit_ntasks=10)
-    # main_caltech('MithralPQ', filt='sobel', limit_ntrain=lim, limit_ntasks=10)
-    # main_caltech('Mithral', filt='dog5x5', limit_ntrain=lim, limit_ntasks=10)
-    # main_caltech('MithralPQ', filt='dog5x5', limit_ntrain=lim, limit_ntasks=10)
-    # main_caltech('OldMithralPQ', filt='sobel', limit_ntrain=lim, limit_ntasks=10)
-
-    # main_ucr(methods='MithralPQ', limit_ntasks=5)
-    # main_caltech(methods='Bolt', limit_ntasks=10, limit_ntrain=500e3, filt='dog5x5')
-    # main_caltech(methods='Bolt', limit_ntasks=10, limit_ntrain=500e3, filt='sobel')
-    # main_caltech(methods='SparsePCA')
+    main_all()
 
 
 if __name__ == '__main__':
