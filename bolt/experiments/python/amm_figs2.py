@@ -479,8 +479,9 @@ my_colors_list = my_colors_list[:5] + (new_yellow,) + my_colors_list[6:]
 # DEFAULT_PLOT_METHODS = ('MADDNESS', 'MADDNESS-PQ', 'Exact', 'Bolt',
 #                         'FastJL', 'HashJL', 'OSNAP', 'PCA', 'SparsePCA',
 #                         'Rademacher', 'RandGauss', 'OrthoGauss')
-DEFAULT_PLOT_METHODS = ('MADDNESS', 'MADDNESS-PQ', 'Exact', 'Bolt',
-                        'FastJL', 'HashJL', 'PCA', 'RandGauss', 'SparsePCA')
+DEFAULT_PLOT_METHODS = ('MADDNESS', 'MADDNESS-PQ', 'Exact',
+                        'FastJL', 'HashJL', 'PCA', 'RandGauss', 'SparsePCA',
+                        'Vingilote')
 
 
 def lineplot(data, ax, x_metric, y_metric, units=None, scatter=False,
@@ -520,15 +521,19 @@ def lineplot(data, ax, x_metric, y_metric, units=None, scatter=False,
     # filled_markers = ('o', 'v', '^', '<', '>', '8', 's', 'p', '*', 'h',
     #                   'H', 'D', 'd', 'P', 'X')
     # use_markers = ('*', '*', 's') + (
+    vingilote_markers = tuple([f'${i}$' for i in range(20)])
     use_markers = ('D', 'D', 's') + (
-        'o', 'v', '^', '<', '>', '8', 'p', 'h', 'd', 'P', 'X', '*', 'D')
+        'o', 'v', '^', '<', '>', '8', 'p', 'h', 'd', 'P', 'X', '*', 'D') + vingilote_markers
+    use_markers = tuple(list(use_markers)[0:len(data['method'].unique())])
+    use_markers = ('P',) + tuple(list(use_markers[0:len(use_markers)-1]))
     if scatter:
         # sb.violinplot(cut=0, saturation=1, linewidth=.001, scale='width', inner='box',
         # data['Speedup'] *= 1 + (np.random.randn(len(data['Speedup'])) / 100)
         sb.scatterplot(alpha=.25, # seems to suck the least
             data=data, x=x_metric, y=y_metric, hue='method',
             style='method', style_order=order, hue_order=order,
-            markers=use_markers, estimator=estimator,
+            markers=use_markers,
+            estimator=estimator,
             # units=units, estimator=estimator, markers=use_markers,
             palette=my_colors_list, ax=ax)
         # sb.boxplot(linewidth=.1, width=2, whis=999,
@@ -537,12 +542,16 @@ def lineplot(data, ax, x_metric, y_metric, units=None, scatter=False,
         #     palette=my_colors_list, ax=ax)
         return
     kwargs.setdefault('ci', 'sd')
+    data = data.reset_index()
     sb.lineplot(data=data, x=x_metric, y=y_metric, hue='method',
                 # style='method', style_order=order[::-1], hue_order=order[::-1],
                 style='method', style_order=order, hue_order=order,
-                markers=use_markers, estimator=estimator,
+                markers=use_markers,
+                estimator=estimator,
                 # units=units, estimator=estimator, markers=use_markers,
-                dashes=False, palette=my_colors_list, ax=ax, **kwargs)
+                dashes=False,
+                palette=my_colors_list,
+                ax=ax, **kwargs)
     lines = ax.get_lines()
     for i, line in enumerate(lines):
         line.set_zorder(10 - i)
@@ -551,7 +560,9 @@ def lineplot(data, ax, x_metric, y_metric, units=None, scatter=False,
 # def cifar_fig(save=False, x_metric='Throughput', y_metric='Accuracy'):
 def cifar_fig(save=False, x_metric='Speedup', y_metric='Accuracy'):
     df10 = res.cifar10_amm()
+    print(df10[df10['method'].isin(['Vingilote', 'MADDNESS'])][['Accuracy','method',y_metric]])
     df100 = res.cifar100_amm()
+    print(df100[df100['method'].isin(['Vingilote', 'MADDNESS'])][['Accuracy','method',y_metric]])
     sb.set_context('poster')
     # fig, axes = plt.subplots(2, 1, figsize=(11, 13.5), sharex=True)
     # fig, axes = plt.subplots(2, 1, figsize=(11, 10), sharex=True)
@@ -567,6 +578,8 @@ def cifar_fig(save=False, x_metric='Speedup', y_metric='Accuracy'):
     # df10 = df10.loc[df10['method'] != 'OrthoGauss']
     # df100 = df100.loc[df100['method'] != 'OrthoGauss']
 
+    use_markers = ('D', 'D', 's') + (
+        'o', 'v', '^', '<', '>', '8', 'p', 'h', 'd', 'P', 'X', '*', 'D') + ('$v$',)
     lineplot(df10, axes[0], x_metric=x_metric, y_metric=y_metric)
     lineplot(df100, axes[1], x_metric=x_metric, y_metric=y_metric)
 
@@ -582,7 +595,7 @@ def cifar_fig(save=False, x_metric='Speedup', y_metric='Accuracy'):
     axes[1].set_title('CIFAR-100')
 
     handles, labels = axes[0].get_legend_handles_labels()
-    handles, labels = handles[1:], labels[1:]  # rm 'Method' title
+    #handles, labels = handles[1:], labels[1:]  # rm 'Method' title
     # axes[0].legend(handles, labels, fontsize='small')
     # axes[1].legend(handles, labels, fontsize='small')
     # plt.figlegend(handles, labels, loc='lower center', ncol=1)
@@ -982,12 +995,12 @@ def ucr_fig2(x_metric='Speedup', y_metric='Relative Accuracy',
 
 
 def main():
-    scan_speed_fig()
-    encode_speed_fig()
-    lut_speed_fig()
+    #scan_speed_fig()
+    #encode_speed_fig()
+    #lut_speed_fig()
     fig1()
-    ucr_fig2()
-    caltech_fig()
+    #ucr_fig2()
+    #caltech_fig()
     cifar_fig(y_metric='1 - NMSE')
     cifar_fig(x_metric='ops')
 
