@@ -292,6 +292,8 @@ def _join_with_mithral_times(df, timing_dtype='f32'):
         df['method'].str.lower().str.startswith('mithral')
         | 
         df['method'].str.lower().str.startswith('vingilote')
+        |
+        df['method'].str.lower().str.startswith('pluto')
     ]
     df['ncodebooks'] = df['ncodebooks'].astype(np.int)
 
@@ -317,7 +319,12 @@ def _join_with_mithral_times(df, timing_dtype='f32'):
     df.loc[is_mithral_pq, 'lut_work_const'] = 1
     df_mpq = df.loc[is_mithral_pq].copy()
 
-    is_vingilote = df['method'].str.lower().str.startswith('vingilote')
+    is_vingilote = (
+        df['method'].str.lower().str.startswith('vingilote')
+        |
+        df['method'].str.lower().str.startswith('pluto')
+    )
+
     df.loc[is_vingilote, 'lut_work_const'] = 1
     df_vingilote = df.loc[is_vingilote].copy()
 
@@ -503,7 +510,11 @@ def _join_with_sparse_sketch_times(df, sparse_pareto=True):
 def _clean_method_names_amm(df):
     key = 'method' if 'method' in df else 'algo'
     if 'lutconst' in df:
-        is_vingilote = df['method'] == 'Vingilote'
+        is_vingilote = (
+            (df['method'] == 'Vingilote')
+            |
+            (df['method'] == 'Pluto')
+        )
         df.loc[(df['lutconst'] == -2) & ~is_vingilote , key] = 'MADDNESS Dense'
 
         is_lutconst_neg1 = df['lutconst'] == -1
@@ -535,6 +546,8 @@ def _clean_method_names_amm(df):
 
 
 def _clean_metrics_amm(df):
+    df_exact = df.loc[df['method'] == 'Exact']
+    print(df_exact)
     df = df.rename({'acc_amm': 'Accuracy'}, axis=1)
     df['time'] = (df['t0'] + df['t1'] + df['t2'] + df['t3'] + df['t4']) / 5.
     df['Throughput'] = 1e3 * df['N'] * df['M'] / df['time']
@@ -552,11 +565,13 @@ def _clean_metrics_amm(df):
     # df['nor']
     # df_exact = df.loc[df['method'] == 'Brute Force']
     df_exact = df.loc[df['method'] == 'Exact']
-    # print("df_exact\n", df_exact)
+    print("df_exact\n", df_exact)
     if 'task_id' in df.columns:
         nuniq_tasks = len(df['task_id'].unique())
     else:
         nuniq_tasks = 1  # cifar{10,100}
+    print(nuniq_tasks)
+    print(df_exact.shape[0])
     assert df_exact.shape[0] == nuniq_tasks
     base_time = float(df_exact.loc[0, 'time'])
     df['NormalizedTime'] = df['time'] / base_time
@@ -632,8 +647,8 @@ def _join_with_times(df, timing_dtype='f32', sparse_pareto=True):
     df_osnap = _join_with_osnap_times(df)
     df_brute = _join_with_brute_force_times(df)
     df_sketch = _join_with_dense_sketch_times(df)
-    df_sparse = _join_with_sparse_sketch_times(df, sparse_pareto=sparse_pareto)
-    dfs = [df_mithral, df_bolt, df_osnap, df_brute, df_sketch, df_sparse]
+    #df_sparse = _join_with_sparse_sketch_times(df, sparse_pareto=sparse_pareto)
+    dfs = [df_mithral, df_bolt, df_osnap, df_brute, df_sketch]#, df_sparse]
 
     return pd.concat(dfs, axis=0, join='outer', sort=False)
 

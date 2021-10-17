@@ -319,7 +319,87 @@ class VingiloteMatmul(VQMatmul):
             # ***
 
         if self.luts is None:
+            # set_B:
+            # sets self.luts, self.offset, self.scale
+            # uses self.enc.centroids
             self.set_B(B)
+        return self.enc.dists_enc(self.A_enc, self.luts,
+                                  offset=self.offset, scale=self.scale)
+
+
+class PlutoMatmul(VQMatmul):
+
+    def __init__(self, ncodebooks, lut_work_const=-1):
+        self.lut_work_const = lut_work_const
+        if (lut_work_const is not None) and (lut_work_const > 0) and (
+                lut_work_const > ncodebooks):
+            raise amm.InvalidParametersException(
+                "lut_work_const > ncodebooks: {} > {}".format(
+                    lut_work_const, ncodebooks))
+        super().__init__(ncodebooks=ncodebooks, ncentroids=16)
+
+    # def _get_ncentroids(self):
+    #     return 16
+
+    # def fit(self, A, B, Y=None):
+    #     super().fit(self, A, B, Y=Y)
+
+    def reset_for_new_task(self):
+        self.A_enc = None
+
+    def _create_encoder(self, ncodebooks):
+        return vq.PlutoEncoder(
+            ncodebooks=ncodebooks, lut_work_const=self.lut_work_const)
+
+    def get_params(self):
+        return {'ncodebooks': self.ncodebooks,
+                'lut_work_const': self.lut_work_const}
+
+    def get_speed_metrics(self, A, B, fixedA=False, fixedB=False):
+        N, D = A.shape
+        D, M = B.shape
+        # data encoding and LUT costs
+        nmuls = 0
+        nmuls += 0 if fixedA else N * D  # offset + scale before quantize
+        nmuls_per_codebook_per_output = self.ncentroids * D
+        nmuls_per_output = nmuls_per_codebook_per_output * self.ncodebooks
+        nmuls += 0 if fixedB else nmuls_per_output * M
+        # lookups given encoded data + luts
+        nlookups = N * M * self.ncodebooks
+        return {amm.KEY_NMULTIPLIES: nmuls, KEY_NLOOKUPS: nlookups}
+
+    def fit(self, A, B, Y=None):
+        _, D = A.shape
+        if D < self.ncodebooks:
+            raise amm.InvalidParametersException(
+                'D < C: {} < {}'.format(D, self.ncodebooks))
+
+        # self.enc.fit sets self.enc.splits_lists and self.enc.centroids
+        # self.enc.fit also calls clusterize.learn_pluto
+        self.luts, self.offset, self.scale = self.enc.fit(A, B.T)
+        self.B = B
+
+    def set_B(self, B):
+        assert np.array_equal(self.B, B)
+
+    def __call__(self, A, B):
+        if self.A_enc is None:
+            # sets self.A_enc, uses self.enc.splits_lists and self.enc.offsets
+            self.A_enc = self.enc.encode_X(A)
+
+        if not np.array_equal(self.B, B):
+            raise ValueError("Pluto luts cannot be transferred to new B.")
+
+        if self.luts is None:
+            raise ValueError("Pluto luts must be pre-learned.")
+
+        # MultiCodebookEncoder.dists_enc looks at:
+        #   - quantize_lut
+        #   - total_lut_offset
+        #   - scale_by
+        #   - upcast_every
+        #   - accumulate_how
+        #   - ncodebooks
         return self.enc.dists_enc(self.A_enc, self.luts,
                                   offset=self.offset, scale=self.scale)
 

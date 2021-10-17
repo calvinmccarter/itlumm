@@ -481,7 +481,7 @@ my_colors_list = my_colors_list[:5] + (new_yellow,) + my_colors_list[6:]
 #                         'Rademacher', 'RandGauss', 'OrthoGauss')
 DEFAULT_PLOT_METHODS = ('MADDNESS', 'MADDNESS-PQ', 'Exact',
                         'FastJL', 'HashJL', 'PCA', 'RandGauss', 'SparsePCA',
-                        'Vingilote')
+                        'Vingilote', 'Pluto')
 
 
 def lineplot(data, ax, x_metric, y_metric, units=None, scatter=False,
@@ -560,7 +560,7 @@ def lineplot(data, ax, x_metric, y_metric, units=None, scatter=False,
 # def cifar_fig(save=False, x_metric='Throughput', y_metric='Accuracy'):
 def cifar_fig(save=False, x_metric='Speedup', y_metric='Accuracy'):
     df10 = res.cifar10_amm()
-    print(df10[df10['method'].isin(['Vingilote', 'MADDNESS'])][['Accuracy','method',y_metric]])
+    print(df10[df10['method'].isin(['Vingilote', 'MADDNESS', 'Pluto'])][['Accuracy','method',y_metric]])
     df100 = res.cifar100_amm()
     print(df100[df100['method'].isin(['Vingilote', 'MADDNESS'])][['Accuracy','method',y_metric]])
     sb.set_context('poster')
@@ -998,7 +998,7 @@ def main():
     #scan_speed_fig()
     #encode_speed_fig()
     #lut_speed_fig()
-    fig1()
+    #fig1()
     #ucr_fig2()
     #caltech_fig()
     cifar_fig(y_metric='1 - NMSE')

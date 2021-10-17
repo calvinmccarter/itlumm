@@ -303,6 +303,7 @@ def _main(tasks_func, methods=None, saveas=None, ntasks=None,
           verbose=4, limit_ntasks=-1, compression_metrics=False,
           tasks_all_same_shape=False):
     methods = methods.DEFAULT_METHODS if methods is None else methods
+    print(methods)
     if isinstance(methods, str):
         methods = [methods]
     if limit_ntasks is None or limit_ntasks < 1:
@@ -379,7 +380,8 @@ def _main(tasks_func, methods=None, saveas=None, ntasks=None,
                             # metrics.update(hparams_dict)
                             metrics.update(est.get_params())
                             print("got metrics: ")
-                            pprint.pprint(metrics)
+                            if method_id in ("Vingilote", "Mithral", "Pluto"):
+                                pprint.pprint(metrics)
                             # pprint.pprint({k: metrics[k] for k in 'method task_id normalized_mse'.split()})
                             # print("{:.5f}".format(metrics['normalized_mse'])) # TODO uncomment above
                             metrics_dicts.append(metrics)
@@ -433,10 +435,10 @@ def main_cifar100(methods=methods.USE_METHODS, saveas='cifar100'):
 def main_all(methods=methods.USE_METHODS):
     print(methods)
     #methods = ("Vingilote",)
-    #methods = ("Vingilote",)
-    #exit(0)
+    #methods = ("Mithral", "Vingilote",)
     main_cifar10(methods=methods)
     main_cifar100(methods=methods)
+    exit(0)
     main_caltech(methods=methods)
     main_ucr(methods=methods)
 
