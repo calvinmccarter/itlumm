@@ -6,6 +6,7 @@ from functools import reduce
 
 import numba
 import torch
+import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from sklearn import linear_model
 from torchmin import minimize
@@ -921,6 +922,49 @@ def _fit_ridge_enc(X_enc=None, Y=None, K=16, lamda=1, X_bin=None):
     return sk_result
 
 
+def encoded_vingilote2(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
+                       B=None, K=16, lamda=1.0):
+    """
+    X_orig: (N, D)
+    B: (D, M)
+    G: (N, n_codebooks*16)
+    P: (n_codebooks*16, D)
+
+    X_enc: (N, n_codebooks)
+    X_bin: (N, n_codebooks*16)
+    Y: (N, D) -- ie size of A because predicting A_res
+    """
+    if X_bin is None:
+        X_bin = _densify_X_enc(X_enc, K=K)
+
+    P_0_np = all_centroids.reshape(X_bin.shape[1], X_orig.shape[1])
+    P_0 = torch.from_numpy(P_0_np)
+
+    G_np = X_bin.astype(np.float32)
+    G = torch.from_numpy(G_np)
+    orig_prod_np = X_orig @ B
+    B_torch = torch.from_numpy(B)
+
+    X_orig_torch = torch.from_numpy(X_orig)
+    orig_prod = torch.from_numpy(orig_prod_np)
+    orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
+    softmaxAB = torch.from_numpy(orig_prod_softmax_np)
+    print(f"encoded_vingilote2 A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
+    def vingilote_obj(P_delta):
+        AB_err = softmaxAB - F.softmax(G @ (P_delta+P_0) @ B_torch, dim=1)
+        loss = (
+            torch.sum(torch.square(AB_err)) +
+            lamda * torch.sum(torch.square(P_delta - P_0))
+        )
+        return loss
+    P_delta_init = torch.zeros(*(P_0_np.shape))
+    res = minimize(
+        vingilote_obj, P_delta_init, method='l-bfgs',
+        max_iter=100, disp=1)
+    torch_result = res.x.numpy()
+    return torch_result
+
+
 def encoded_vingilote(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
                       B=None, K=16, lamda=1.0, alpha=1.0):
     """
@@ -940,7 +984,7 @@ def encoded_vingilote(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
     est.fit(X_bin, Y)
     P_1_np = est.coef_.T
 
-    P_0 = all_centroids.reshape(X_bin.shape[1], Y.shape[1])
+    P_0 = all_centroids.reshape(X_bin.shape[1], X_orig.shape[1])
 
     G_np = X_bin.astype(np.float32)
     G = torch.from_numpy(G_np)
@@ -1589,7 +1633,7 @@ def learn_vingilote(
     print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
     # W = encoded_lstsq(X_enc=X_enc, Y=X_res)
 
-    W = encoded_vingilote(
+    W = encoded_vingilote2(
         X_orig=X_orig, all_centroids=all_centroids, Y=X_res, X_enc=X_enc, B=Q.T)
     print(f"vingilote fitted dense lstsq with W:{W.shape}")
 
