@@ -4,6 +4,7 @@ import copy
 import numpy as np
 from functools import reduce
 
+import fastcluster
 import numba
 import torch
 import torch.nn.functional as F
@@ -592,7 +593,10 @@ def learn_multisplits_orig(X, nsplits, log2_max_vals_per_split=4,
             upper_val = (np.max(x) + np.max(use_split_vals)) / 2 - offset
             scale = 254. / upper_val
             if learn_quantize_params == 'int16':
-                scale = 2. ** int(np.log2(scale))
+                if scale == 0.0:
+                    scale = 0.0
+                else:
+                    scale = 2. ** int(np.log2(scale))
 
             split.offset = offset
             split.scaleby = scale
@@ -765,7 +769,15 @@ def learn_multisplits(
             upper_val = (np.max(x) + np.max(use_split_vals)) / 2 - offset
             scale = 254. / upper_val
             if learn_quantize_params == 'int16':
-                scale = 2. ** int(np.log2(scale))
+                try:
+                    scale = 2. ** int(np.log2(scale))
+                except:
+                    print(f"split err: upper_val{upper_val} offset{offset}")
+                    print(f"  oldvals:{split.vals}")
+                    scale = 1.0
+                    splitvals = (split.vals - offset) * scale
+                    splitvals = np.clip(splitvals, 0, 255).astype(np.int32)
+                    print(f"  newvals:{splitvals}")
 
             split.offset = offset
             split.scaleby = scale
@@ -922,6 +934,58 @@ def _fit_ridge_enc(X_enc=None, Y=None, K=16, lamda=1, X_bin=None):
     return sk_result
 
 
+def encoded_pluto(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
+                  B=None, K=16, lamda=1.0):
+    """
+    X_orig: (N, D)
+    B: (D, M)
+    G: (N, n_codebooks*16)
+    P: (n_codebooks*16, D)
+
+    X_enc: (N, n_codebooks)
+    X_bin: (N, n_codebooks*16)
+    Y: (N, D) -- ie size of A because predicting A_res
+
+    returns:
+    T: (n_codebooks*16, M) - lookup table
+    """
+    (D, M) = B.shape
+    if X_bin is None:
+        X_bin = _densify_X_enc(X_enc, K=K)
+
+    P_0_np = all_centroids.reshape(X_bin.shape[1], X_orig.shape[1])
+    P_0 = torch.from_numpy(P_0_np)
+    T_0_np = P_0_np @ B
+    T_0 = torch.from_numpy(T_0_np)
+
+    G_np = X_bin.astype(np.float32)
+    G = torch.from_numpy(G_np)
+    orig_prod_np = X_orig @ B
+    B_torch = torch.from_numpy(B)
+
+    X_orig_torch = torch.from_numpy(X_orig)
+    orig_prod = torch.from_numpy(orig_prod_np)
+    orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
+    softmaxAB = torch.from_numpy(orig_prod_softmax_np)
+    print(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
+    kld_loss = torch.nn.KLDivLoss(reduction='sum')
+    def pluto_obj(T_cur):
+        pred_probs = F.softmax(G @ T_cur, dim=1)
+        AB_err_loss = kld_loss(pred_probs, softmaxAB)
+        loss = (
+            AB_err_loss +
+            lamda * torch.sum(torch.square(T_cur - T_0))
+        )
+        return loss
+    P_delta_init = torch.zeros(*(P_0_np.shape))
+    T_init = torch.from_numpy(T_0_np)
+    res = minimize(
+        pluto_obj, T_init, method='l-bfgs',
+        max_iter=100, disp=3)
+    torch_result = res.x.numpy()
+    return torch_result
+
+
 def encoded_vingilote2(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
                        B=None, K=16, lamda=1.0):
     """
@@ -950,10 +1014,13 @@ def encoded_vingilote2(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
     orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
     softmaxAB = torch.from_numpy(orig_prod_softmax_np)
     print(f"encoded_vingilote2 A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
+    kld_loss = torch.nn.KLDivLoss(reduction='sum')
     def vingilote_obj(P_delta):
-        AB_err = softmaxAB - F.softmax(G @ (P_delta+P_0) @ B_torch, dim=1)
+        #AB_err = softmaxAB - F.softmax(G @ (P_delta+P_0) @ B_torch, dim=1)
+        #AB_err_loss = torch.sum(torch.square(AB_err))
+        AB_err_loss = kld_loss(F.softmax(G @ (P_delta+P_0) @ B_torch, dim=1), softmaxAB)
         loss = (
-            torch.sum(torch.square(AB_err)) +
+            AB_err_loss +
             lamda * torch.sum(torch.square(P_delta - P_0))
         )
         return loss
@@ -1002,7 +1069,8 @@ def encoded_vingilote(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
     print(f"   X_bin:{X_bin.shape} Y:{Y.shape}")
     print(f"encoded_vingilote A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
     def vingilote_obj(P_delta):
-        AB_err = (R - G @ P_delta @ B_torch) * Z
+        AB_err = (R - G @ P_delta @ B_torch)
+        #AB_err = (R - G @ P_delta @ B_torch) * Z
         #AB_err = torch.tensor(0.0)
         A_err = A_res - torch.matmul(G, P_delta)
         loss = (
@@ -1488,6 +1556,139 @@ def _pq_codebook_start_end_idxs(X, ncodebooks, algo='start'):
     return idxs
 
 
+# def _pq_codebook_start_end_idxs(D, ncodebooks):
+def _pq_codebook_start_end_idxs(X, ncodebooks, algo='start'):
+    assert algo in ('start', 'end')  # TODO do something smarter here
+
+    # D = int(D)
+    _, D = X.shape
+    ncodebooks = int(ncodebooks)
+    assert D >= ncodebooks
+
+    idxs = np.empty((ncodebooks, 2), dtype=np.int)
+    full_subvec_len = D // ncodebooks
+    start_idx = 0
+    for c in range(ncodebooks):
+        subvec_len = full_subvec_len
+        if algo == 'start':     # wider codebooks at the start
+            if c < (D % ncodebooks):
+                subvec_len += 1
+        elif algo == 'end':     # wider codebooks at the end
+            if (ncodebooks - c - 1) < (D % ncodebooks):
+                subvec_len += 1
+        end_idx = min(D, start_idx + subvec_len)
+        # print("c, start_idx, end_idx: ", c, start_idx, end_idx)
+        # print("start_idx, end_idx: ", c, start_idx, end_idx)
+        idxs[c, 0] = start_idx
+        idxs[c, 1] = end_idx
+
+        start_idx = end_idx
+
+    assert idxs[0, 0] == 0
+    assert idxs[-1, -1] == D
+    return idxs
+
+
+def linkage_to_ordering(Z):
+    n = len(Z) + 1
+    cache = dict()
+    for k in range(len(Z)):
+        c1, c2 = int(Z[k][0]), int(Z[k][1])
+        c1 = [c1] if c1 < n else cache.pop(c1)
+        c2 = [c2] if c2 < n else cache.pop(c2)
+        cache[n+k] = c1 + c2
+    return cache[2*len(Z)]
+
+def group_X_cols(X):
+    noise = np.random.normal(loc=0, scale=0.01, size=X.shape)
+    corrcoef = np.corrcoef(X + noise, rowvar=False)
+    R2 = corrcoef ** 2
+    Z = fastcluster.linkage((X+noise).T, method="average", metric="correlation")
+    ix = linkage_to_ordering(Z)
+    assert len(ix) == X.shape[1]
+    return ix
+
+
+
+@_memory.cache
+def _learn_ithildin_initialization(X, X_weights, ncodebooks,
+                                   pq_perm_algo='start', **kwargs):
+    reordered_ixs = group_X_cols(X)
+
+    N, D = X.shape
+    ncentroids_per_codebook = 16
+
+    X = X.astype(np.float32)
+    X_res = X.copy()
+    X_orig = X
+
+    all_centroids = np.zeros(
+        (ncodebooks, ncentroids_per_codebook, D), dtype=np.float32)
+    all_splits = []
+    pq_idxs = _pq_codebook_start_end_idxs(X, ncodebooks, algo=pq_perm_algo)
+    subvec_len = int(np.ceil(D / ncodebooks))  # for non-pq heuristics
+    
+    r2_ixs = []
+    r2_ixs_set = set()
+    for c in range(ncodebooks):
+        start_idx, end_idx = pq_idxs[c]
+        c_idxs = [reordered_ixs[ii] for ii in range(start_idx, end_idx)]
+        r2_ixs_set.update(c_idxs)
+        r2_ixs.append(np.array(c_idxs))
+    assert(r2_ixs_set == set(list(range(0, D))))
+       
+
+    nonzeros_heuristic = 'r2'
+
+    # ------------------------ 0th iteration; initialize all codebooks
+    all_splits = []
+    all_buckets = []
+    for c in range(ncodebooks):
+        if nonzeros_heuristic == 'pq':
+            start_idx, end_idx = pq_idxs[c]
+            idxs = np.arange(start_idx, end_idx)
+        elif nonzeros_heuristic == 'r2':
+            idxs = r2_ixs[c]
+        elif nonzeros_heuristic == 'pca':
+            v = subs.top_principal_component(X_res)
+            idxs = np.argsort(np.abs(v))[:-subvec_len]
+        elif nonzeros_heuristic == 'disjoint_pca':
+            use_X_res = X_res.copy()
+            if c > 0:  # not the first codebook
+                use_X_res[:, idxs] = 0  # can't use same subspace
+            v = subs.top_principal_component(use_X_res)
+            idxs = np.argsort(np.abs(v))[:-subvec_len]
+
+        use_X_res = X_res[:, idxs]
+        use_X_orig = X_orig[:, idxs]
+        use_X_weights = X_weights[:, idxs]
+
+        # learn codebook to soak current residuals
+        multisplits, _, buckets = learn_multisplits(
+            use_X_res, X_orig=use_X_orig,
+            return_centroids=False, return_buckets=True, **kwargs)
+        for split in multisplits:
+            split.dim = idxs[split.dim]
+        all_splits.append(multisplits)
+        all_buckets.append(buckets)
+
+        # update residuals and store centroids
+        centroid = np.zeros(D, dtype=np.float32)
+        for b, buck in enumerate(buckets):
+            if len(buck.point_ids):
+                centroid[:] = 0
+                centroid[idxs] = buck.col_means()
+                X_res[buck.point_ids] -= centroid
+                # update centroid here in case we want to regularize it somehow
+                all_centroids[c, b] = centroid
+
+        # print("X_res mse / X mse: ",
+        #       (X_res * X_res).mean() / (X_orig * X_orig).mean())
+
+    return X_res, all_splits, all_centroids, all_buckets
+
+
+
 @_memory.cache
 def _learn_mithral_initialization(X, ncodebooks,
                                   pq_perm_algo='start', **kwargs):
@@ -1582,24 +1783,30 @@ def learn_pluto(
     print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
     # W = encoded_lstsq(X_enc=X_enc, Y=X_res)
 
-    W = encoded_vingilote(
+    T_badshape = encoded_pluto(
         X_orig=X_orig, all_centroids=all_centroids, Y=X_res, X_enc=X_enc, B=Q.T)
-    print(f"vingilote fitted dense lstsq with W:{W.shape}")
+    # shape: (n_codebooks*16, M)
+    luts = T_badshape.T # (M, n_codebooks*16)
+    luts = luts.reshape(M, ncodebooks, ncentroids_per_codebook)
 
-    all_centroids_delta = W.reshape(ncodebooks, ncentroids_per_codebook, D)
-    all_centroids += all_centroids_delta
+
 
     # check how much improvement we got
-    X_res -= _XW_encoded(X_enc, W)  # if we fit to X_res
-    mse_res = (X_res * X_res).mean()
-    print("X_res mse / X mse after lstsq: ", mse_res / mse_orig)
+    # X_res -= _XW_encoded(X_enc, W)  # if we fit to X_res
+    # mse_res = (X_res * X_res).mean()
+    # print("X_res mse / X mse after lstsq: ", mse_res / mse_orig)
     # print("min, median, max, std, of all centroids after lstsq:\n",
     #       all_centroids.min(), np.median(all_centroids),
     #       all_centroids.max(), all_centroids.std())
 
+    # TODO
+    
+    # shape: (M, ncodebooks, 16)
+    """
     luts = np.zeros((Q.shape[0], ncodebooks, ncentroids_per_codebook))
     for i, q in enumerate(Q):
         luts[i] = mithral_lut(q, all_centroids) # reshapes
+    """
 
     return all_splits, all_centroids, luts
 
@@ -1610,13 +1817,15 @@ def learn_vingilote(
 ):
     N, D = X.shape  # A
     M, DQ = Q.shape  # B^T
+    Xweights = np.sum(Q ** 2, axis=0, keepdims=True) # (1, D)
     print(f"learn_vingilote with N:{N} D:{D} M:{M} DQ:{DQ}")
     
     ncentroids_per_codebook = 16
     X_orig = X.astype(np.float32)
 
+    
     X_res0, all_splits0, all_centroids0, all_buckets0 = \
-        _learn_mithral_initialization(X, ncodebooks, pq_perm_algo='start')
+        _learn_ithildin_initialization(X, Xweights, ncodebooks, pq_perm_algo='start')
 
     mse_orig = (X_orig * X_orig).mean()
     mse0 = (X_res0 * X_res0).mean()
@@ -1633,7 +1842,7 @@ def learn_vingilote(
     print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
     # W = encoded_lstsq(X_enc=X_enc, Y=X_res)
 
-    W = encoded_vingilote2(
+    W = encoded_vingilote(
         X_orig=X_orig, all_centroids=all_centroids, Y=X_res, X_enc=X_enc, B=Q.T)
     print(f"vingilote fitted dense lstsq with W:{W.shape}")
 

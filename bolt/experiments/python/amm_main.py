@@ -379,8 +379,8 @@ def _main(tasks_func, methods=None, saveas=None, ntasks=None,
                             metrics['task_id'] = task.name
                             # metrics.update(hparams_dict)
                             metrics.update(est.get_params())
-                            print("got metrics: ")
                             if method_id in ("Vingilote", "Mithral", "Pluto"):
+                                print("got metrics: ")
                                 pprint.pprint(metrics)
                             # pprint.pprint({k: metrics[k] for k in 'method task_id normalized_mse'.split()})
                             # print("{:.5f}".format(metrics['normalized_mse'])) # TODO uncomment above
@@ -438,7 +438,7 @@ def main_all(methods=methods.USE_METHODS):
     #methods = ("Mithral", "Vingilote",)
     main_cifar10(methods=methods)
     main_cifar100(methods=methods)
-    exit(0)
+    #exit(0)
     main_caltech(methods=methods)
     main_ucr(methods=methods)
 
