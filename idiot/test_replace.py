@@ -7,9 +7,12 @@ import torchvision.transforms as tvt
 from PIL import Image
 from torchvision import transforms
 
-import idiot
+from idiot.idiot import (
+    get_descendant_by_fullname,
+    replace_descendants,
+)
 
-from mlp_mixer import MLPMixer
+from idiot.mlp_mixer import MLPMixer
 
 net = MLPMixer(
     image_shape=(32, 32), 
@@ -21,7 +24,8 @@ net = MLPMixer(
     dropout=0.2,
     mlp_dim_factor=2,
 )
-net.load_state_dict(torch.load("mlp_mixer_cifar10_small.pt"))
+net.load_state_dict(torch.load(
+    "/Users/calvinm/sandbox/MLP-Mixer/mlp_mixer_cifar10_small.pt"))
 #print(net)
 
 transform = tvt.Compose([
@@ -39,11 +43,22 @@ idiot_opts = {
     "max_input_numel": 32*64*10,
 }
 
-new_net = idiot.replace_descendents(
-    net, idiot_phase, idiot_ordering, idiot_input, idiot_opts, "", F.gelu)
+# XXX - only fc1 in MLPMixer.MLP has gelu
+# f_act = F.gelu
+f_act = None
+
+new_net = replace_descendants(
+    net,
+    idiot_phase,
+    idiot_ordering,
+    idiot_input,
+    idiot_opts,
+    "",
+    f_act,
+)
 #print(new_net)
 
-filename = 'images/frog.jpg'
+filename = '/Users/calvinm/sandbox/MLP-Mixer/images/frog.jpg'
 image = Image.open(filename)
 image = transform(image)
 image = image.unsqueeze(0)
@@ -60,12 +75,12 @@ def f_softmax(x):
 print(new_net)
 #print(output)
 #print(f_softmax(output))
-#print(idiot.get_descendant_by_fullname(new_net, idiot_ordering[-1]))
-idiot.get_descendant_by_fullname(
+#print(get_descendant_by_fullname(new_net, idiot_ordering[-1]))
+get_descendant_by_fullname(
     new_net, idiot_ordering[-1])._idiot_activation = f_softmax
 print(new_net)
 
-if __name__ == "__main__" and False:
+if __name__ == "__main__":
     tmp.freeze_support()
     test_data = tv.datasets.CIFAR10(
         './',
@@ -92,7 +107,7 @@ if __name__ == "__main__" and False:
             print(lname)
             print(idiot_input_concat.shape)
 
-            idiot.get_descendant_by_fullname(new_net, lname).fit_lut()
+            get_descendant_by_fullname(new_net, lname).fit_lut()
             idiot_phase[lname] = "apply_lut"
 
             # TODO fine-tune

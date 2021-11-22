@@ -934,8 +934,28 @@ def _fit_ridge_enc(X_enc=None, Y=None, K=16, lamda=1, X_bin=None):
     return sk_result
 
 
-def encoded_pluto(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
-                  B=None, K=16, lamda=1.0):
+def identity(x):
+    return x
+
+
+def sse_loss(x, y):
+    err = x - y
+    return torch.sum(torch.square(err))
+    
+
+def encoded_pluto(
+    X_orig,
+    all_centroids,
+    Y,
+    X_enc=None,
+    X_bin=None,
+    B=None,
+    bias=None,
+    activation=None,
+    loss_func=None,
+    K=16,
+    lamda=1.0,
+):
     """
     X_orig: (N, D)
     B: (D, M)
@@ -947,12 +967,26 @@ def encoded_pluto(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
     Y: (N, D) -- ie size of A because predicting A_res
 
     returns:
-    T: (n_codebooks*16, M) - lookup table
+    T: np.ndarray of shape (n_codebooks*16, M) - lookup table
     """
     (D, M) = B.shape
     if X_bin is None:
         X_bin = _densify_X_enc(X_enc, K=K)
 
+   
+    if activation is None:
+        activation = identity
+        # TODO: if activation is None, ignore bias since
+        # bias does not affect sse_loss
+    else:
+        if bias is not None:
+            raise NotImplementedError("nonlinear activation with bias")
+
+    if bias is None:
+        bias = torch.tensor(0.)
+    else:
+        bias = torch.from_numpy(bias)
+ 
     P_0_np = all_centroids.reshape(X_bin.shape[1], X_orig.shape[1])
     P_0 = torch.from_numpy(P_0_np)
     T_0_np = P_0_np @ B
@@ -970,8 +1004,10 @@ def encoded_pluto(X_orig, all_centroids, Y, X_enc=None, X_bin=None,
     print(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
     kld_loss = torch.nn.KLDivLoss(reduction='sum')
     def pluto_obj(T_cur):
-        pred_probs = F.softmax(G @ T_cur, dim=1)
-        AB_err_loss = kld_loss(pred_probs, softmaxAB)
+        #pred_probs = F.softmax(G @ T_cur, dim=1)
+        #AB_err_loss = kld_loss(pred_probs, softmaxAB)
+        # TODO: implement bias and activation
+        AB_err_loss = torch.sum(torch.square(G @ T_cur - orig_prod))
         loss = (
             AB_err_loss +
             lamda * torch.sum(torch.square(T_cur - T_0))
@@ -1754,7 +1790,7 @@ def _learn_mithral_initialization(X, ncodebooks,
 
 @_memory.cache
 def learn_pluto(
-    X, Q, ncodebooks, **kwargs,
+    X, Q, ncodebooks, activation, bias, **kwargs,
 ):
     Q = np.atleast_2d(Q)
 
@@ -1784,7 +1820,8 @@ def learn_pluto(
     # W = encoded_lstsq(X_enc=X_enc, Y=X_res)
 
     T_badshape = encoded_pluto(
-        X_orig=X_orig, all_centroids=all_centroids, Y=X_res, X_enc=X_enc, B=Q.T)
+        X_orig=X_orig, all_centroids=all_centroids,
+        Y=X_res, X_enc=X_enc, B=Q.T, bias=bias, activation=activation)
     # shape: (n_codebooks*16, M)
     luts = T_badshape.T # (M, n_codebooks*16)
     luts = luts.reshape(M, ncodebooks, ncentroids_per_codebook)
@@ -1799,7 +1836,6 @@ def learn_pluto(
     #       all_centroids.min(), np.median(all_centroids),
     #       all_centroids.max(), all_centroids.std())
 
-    # TODO
     
     # shape: (M, ncodebooks, 16)
     """

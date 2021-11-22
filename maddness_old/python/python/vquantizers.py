@@ -639,7 +639,7 @@ class VingiloteEncoder(MultiCodebookEncoder):
         self.lut_work_const = lut_work_const
 
     def name(self):
-        return "{}_{}".format('mithral', super().name())
+        return "{}_{}".format('vingilote', super().name())
 
     def params(self):
         return {'ncodebooks': self.ncodebooks,

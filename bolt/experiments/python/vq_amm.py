@@ -329,7 +329,8 @@ class VingiloteMatmul(VQMatmul):
 
 class PlutoMatmul(VQMatmul):
 
-    def __init__(self, ncodebooks, lut_work_const=-1):
+    def __init__(self, ncodebooks, activation=None, lut_work_const=-1):
+        self.activation = activation
         self.lut_work_const = lut_work_const
         if (lut_work_const is not None) and (lut_work_const > 0) and (
                 lut_work_const > ncodebooks):
@@ -346,10 +347,16 @@ class PlutoMatmul(VQMatmul):
 
     def reset_for_new_task(self):
         self.A_enc = None
+        # XXX - also self.B = None?
+        # No! this must be called at each call of forward-pass
 
     def _create_encoder(self, ncodebooks):
-        return vq.PlutoEncoder(
-            ncodebooks=ncodebooks, lut_work_const=self.lut_work_const)
+        pluto_enc = vq.PlutoEncoder(
+            ncodebooks=ncodebooks,
+            activation=self.activation,
+            lut_work_const=self.lut_work_const,
+        )
+        return pluto_enc
 
     def get_params(self):
         return {'ncodebooks': self.ncodebooks,
@@ -368,7 +375,16 @@ class PlutoMatmul(VQMatmul):
         nlookups = N * M * self.ncodebooks
         return {amm.KEY_NMULTIPLIES: nmuls, KEY_NLOOKUPS: nlookups}
 
-    def fit(self, A, B, Y=None):
+    def fit(self, A, B, Y=None, bias=None):
+        """
+
+        Args:
+            A: left of shape (N, D)
+            B: right of shape (D, M)
+            Y: Y = A @ B if not specified -- see ApproxMatmul
+            bias: shape broadcasts when adding A @ B + bias
+        """
+        # TODO use bias with nonlinearity
         _, D = A.shape
         if D < self.ncodebooks:
             raise amm.InvalidParametersException(
@@ -376,18 +392,21 @@ class PlutoMatmul(VQMatmul):
 
         # self.enc.fit sets self.enc.splits_lists and self.enc.centroids
         # self.enc.fit also calls clusterize.learn_pluto
-        self.luts, self.offset, self.scale = self.enc.fit(A, B.T)
+        self.luts, self.offset, self.scale = self.enc.fit(
+            A, B.T, bias=bias)
         self.B = B
 
     def set_B(self, B):
+        # TODO: use stddev and shape to verify with less memory
         assert np.array_equal(self.B, B)
 
-    def __call__(self, A, B):
+    def __call__(self, A, B, bias):
         if self.A_enc is None:
             # sets self.A_enc, uses self.enc.splits_lists and self.enc.offsets
             self.A_enc = self.enc.encode_X(A)
 
         if not np.array_equal(self.B, B):
+            # TODO: use stddev and shape to verify with less memory
             raise ValueError("Pluto luts cannot be transferred to new B.")
 
         if self.luts is None:
@@ -400,8 +419,14 @@ class PlutoMatmul(VQMatmul):
         #   - upcast_every
         #   - accumulate_how
         #   - ncodebooks
-        return self.enc.dists_enc(self.A_enc, self.luts,
-                                  offset=self.offset, scale=self.scale)
+        output = self.enc.dists_enc(
+            self.A_enc,
+            self.luts,
+            offset=self.offset,
+            scale=self.scale,
+        )
+        #rint(f"A.shape:{A.shape} B.shape:{B.shape} out.shape:{output.shape}")
+        return output
 
 
 

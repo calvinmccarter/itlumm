@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from torch import Tensor
 
+import bolt.experiments.python.vq_amm as vq_amm
 
 DEFAULT_IDIOT_OPTS = {
     "max_input_len": 1e6,
@@ -55,6 +56,8 @@ class IdiotLinear(nn.Linear):
 
         idiot_phase[idiot_name] = "noop"
 
+        self._pluto = None
+
     def forward(self, input: Tensor) -> Tensor:
         phase = self._idiot_phase[self._idiot_name]
         if phase == "find_ordering":
@@ -71,9 +74,44 @@ class IdiotLinear(nn.Linear):
             if cur_len <= max_len and cur_numel <= max_numel:
                 self._idiot_input.append(input)
         elif phase == "apply_lut":
-            return F.linear(input, self.weight, self.bias) # XXX
+            #rint(f"apply_lut {self._idiot_name}")
+            #rint(f"input shape {input.shape}")
+            #rint(f"weight shape {self.weight.data.shape}")
+            input_shape = input.shape
+            input_np = input.reshape((-1, input.shape[-1])).numpy()
+            #rint(f"input_np.shape: {input_np.shape}")
+            self._pluto.reset_for_new_task()
+            output_np = self._pluto(
+                input_np,
+                self.weight.data.transpose(0, 1).numpy(),
+                bias=self.bias.data.numpy(),
+            )
+            #rint(f"output_np.shape: {output_np.shape}")
+            output_shape = tuple(list(input_shape[:-1]) + [output_np.shape[-1]])
+            #rint(f"output_shape: {output_shape}")
+            output = torch.from_numpy(output_np).reshape(output_shape)
+            return output
         
         return F.linear(input, self.weight, self.bias)
+
+    def fit_lut(self):
+        self._pluto = vq_amm.PlutoMatmul(ncodebooks=4)
+        # TODO- minimize n_codebooks s.t. 
+        #   n_codebooks < self.weight.shape[0]
+        #   accuracy loss < 0.99^(1/num_linears)
+        #   n_ops_pluto < n_ops_original
+        input = torch.cat(self._idiot_input, dim=0)
+        input_np = input.reshape((-1, input.shape[-1])).numpy()
+        #rint(f"fit_lut {self._idiot_name}")
+        #rint(self)
+        #rint(input_np.shape)
+        #rint(self.weight.shape)
+        #rint(self.bias.shape)
+        self._pluto.fit(
+            input_np,
+            self.weight.data.transpose(0, 1).numpy(),
+            bias=self.bias.data.numpy(),
+        )
 
     def extra_repr(self) -> str:
         super_repr = [super().extra_repr(),]
@@ -129,7 +167,7 @@ def replace_linear(
     return newmod
 
 
-def replace_descendents(
+def replace_descendants(
     mod: nn.Module,
     idiot_phase,
     idiot_ordering,
@@ -153,7 +191,7 @@ def replace_descendents(
     new_children = {}
     for name, child in mod.named_children():
         fullname = idiot_name + "." + name
-        new_children[name] = replace_descendents(
+        new_children[name] = replace_descendants(
             child,
             idiot_phase=idiot_phase,
             idiot_ordering=idiot_ordering,

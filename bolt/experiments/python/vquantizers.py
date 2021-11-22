@@ -226,7 +226,7 @@ class MultiCodebookEncoder(abc.ABC):
         # for A(N x D) and B(D x M), C codebooks, K=16 buckets
         X_enc = np.ascontiguousarray(X_enc) # has shape (N x C) with values in [0, K-1]
         # Q_luts has shape (M x C x K)
-        print(Q_luts.shape)
+        #rint(Q_luts.shape)
 
         if unquantize:
             offset = self.total_lut_offset if offset is None else offset
@@ -680,7 +680,7 @@ class VingiloteEncoder(MultiCodebookEncoder):
 
 class PlutoEncoder(MultiCodebookEncoder):
 
-    def __init__(self, ncodebooks, lut_work_const=-1):
+    def __init__(self, ncodebooks, activation=None, lut_work_const=-1):
         super().__init__(
             ncodebooks=ncodebooks, ncentroids=16,
             # quantize_lut=True, upcast_every=64,
@@ -691,6 +691,7 @@ class PlutoEncoder(MultiCodebookEncoder):
             # quantize_lut=True, upcast_every=2,
             # quantize_lut=True, upcast_every=1,
             accumulate_how='mean')
+        self.activation = activation
         self.lut_work_const = lut_work_const
 
     def name(self):
@@ -700,10 +701,10 @@ class PlutoEncoder(MultiCodebookEncoder):
         return {'ncodebooks': self.ncodebooks,
                 'lut_work_const': self.lut_work_const}
 
-    def fit(self, X, Q):
+    def fit(self, X, Q, bias=None):
         # Q = B.T, where A is (N, D) and B is (D, M). So Q is (M, D)
         self.splits_lists, self.centroids, luts = clusterize.learn_pluto(
-            X, Q, self.ncodebooks)
+            X, Q, self.ncodebooks, self.activation, bias)
         # self._learn_lut_quantization(X, Q)
 
         """
