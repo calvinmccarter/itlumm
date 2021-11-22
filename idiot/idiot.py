@@ -13,6 +13,7 @@ import bolt.experiments.python.vq_amm as vq_amm
 DEFAULT_IDIOT_OPTS = {
     "max_input_len": 1e6,
     "max_input_numel": 1e8,
+    "ncodebooks": 32,
 }
 
 class IdiotLinear(nn.Linear):
@@ -90,16 +91,19 @@ class IdiotLinear(nn.Linear):
             output_shape = tuple(list(input_shape[:-1]) + [output_np.shape[-1]])
             #rint(f"output_shape: {output_shape}")
             output = torch.from_numpy(output_np).reshape(output_shape)
+            output += self.bias.data
             return output
         
         return F.linear(input, self.weight, self.bias)
 
     def fit_lut(self):
-        self._pluto = vq_amm.PlutoMatmul(ncodebooks=4)
+        ncodebooks = self._idiot_opts["ncodebooks"]
+        self._pluto = vq_amm.PlutoMatmul(ncodebooks=ncodebooks)
         # TODO- minimize n_codebooks s.t. 
         #   n_codebooks < self.weight.shape[0]
         #   accuracy loss < 0.99^(1/num_linears)
         #   n_ops_pluto < n_ops_original
+        #   or, keep increasing ncodebooks until good enough
         input = torch.cat(self._idiot_input, dim=0)
         input_np = input.reshape((-1, input.shape[-1])).numpy()
         #rint(f"fit_lut {self._idiot_name}")
