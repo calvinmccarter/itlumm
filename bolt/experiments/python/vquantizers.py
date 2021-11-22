@@ -261,25 +261,9 @@ class MultiCodebookEncoder(abc.ABC):
                     #       np.mean(dists % 2 == 1))  # ya, ~.5, or maybe ~.495
 
                     start_time = time.time()
-                    dists_orig = dists.copy()
-                    while dists_orig.shape[-1] > 2:
-                        dists_orig = (dists_orig[:, :, ::2] + dists_orig[:, :, 1::2] + 1) // 2
-                    dists_orig = (dists_orig[:, :, 0] + dists_orig[:, :, 1] + 1) // 2
-                    duration = time.time() - start_time
-                    print(f"accumulate_how:mean method:orig {dists.shape}->{dists_orig.shape} duration:{duration}")
-
-                    dists_new = dists.copy()
-                    start_time = time.time()
-                    dists_new = dists_new.transpose().copy()
-                    while dists_new.shape[0] > 2:
-                        dists_new = (dists_new[::2, :, :] + dists_new[1::2, :, :] + 1) // 2
-                    dists_new = (dists_new[0, :, :] + dists_new[1, :, :] + 1) // 2
-                    dists_new = dists_new.transpose().copy()
-                    duration = time.time() - start_time
-                    print(f"accumulate_how:mean method:new {dists.shape}->{dists_new.shape} duration:{duration}")
-                    assert np.array_equal(dists_orig, dists_new)
-
-                    dists = dists_orig
+                    while dists.shape[-1] > 2:
+                        dists = (dists[:, :, ::2] + dists[:, :, 1::2] + 1) // 2
+                    dists = (dists[:, :, 0] + dists[:, :, 1] + 1) // 2
                     dists = dists.sum(axis=-1)  # clipping not needed
 
                     # undo biasing; if low bits are {0,0} or {1,1}, no bias
