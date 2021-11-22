@@ -1,3 +1,4 @@
+import os
 import pickle
 import torch
 import torch.multiprocessing as tmp
@@ -15,17 +16,26 @@ from idiot.idiot import (
 
 from idiot.mlp_mixer import MLPMixer
 
+home = os.environ['HOME']
 
 if __name__ == "__main__":
-    with open("/Users/calvinm/sandbox/objective-correlative/cifar-10-batches-py/batches.meta", 'rb') as pickleFile:
-        cifar10_classes = pickle.load(pickleFile)['label_names'] 
     transform = tvt.Compose([
         tvt.ToTensor(),
         tvt.Resize((32, 32)),
         #tvt.RandomHorizontalFlip(),
         tvt.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ]) 
-    filename = '/Users/calvinm/sandbox/MLP-Mixer/images/frog.jpg'
+    test_data = tv.datasets.CIFAR10(
+        './',
+        train=False,
+        transform=transform,
+        target_transform=None,
+        download=True,
+    )
+    with open(f"{home}/sandbox/objective-correlative/cifar-10-batches-py/batches.meta", 'rb') as pickleFile:
+        cifar10_classes = pickle.load(pickleFile)['label_names'] 
+
+    filename = f"{home}/sandbox/MLP-Mixer/images/frog.jpg"
     image = Image.open(filename)
     image = transform(image)
     image = image.unsqueeze(0)
@@ -44,7 +54,7 @@ if __name__ == "__main__":
         mlp_dim_factor=2,
     )
     net.load_state_dict(torch.load(
-        "/Users/calvinm/sandbox/MLP-Mixer/mlp_mixer_cifar10_small.pt"))
+        f"{home}/sandbox/MLP-Mixer/mlp_mixer_cifar10_small.pt"))
     """
     net = MLPMixer(
         image_shape=(32, 32), 
@@ -57,7 +67,7 @@ if __name__ == "__main__":
         mlp_dim_factor=2,
     )
     net.load_state_dict(torch.load(
-        "/Users/calvinm/sandbox/MLP-Mixer/training_artefacts/model_epoch_41.pth"))
+        f"{home}/sandbox/MLP-Mixer/training_artefacts/model_epoch_41.pth"))
 
     net.eval()
     output = torch.softmax(net(image).squeeze(), dim = 0)
@@ -114,13 +124,6 @@ if __name__ == "__main__":
         new_net, idiot_ordering[-1])._idiot_activation = f_softmax
     #print(new_net)
 
-    test_data = tv.datasets.CIFAR10(
-        './',
-        train=False,
-        transform=transform,
-        target_transform=None,
-        download=True,
-    )
     test_loader = torch.utils.data.DataLoader(
         test_data,
         batch_size=4,
