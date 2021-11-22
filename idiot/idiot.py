@@ -13,7 +13,7 @@ import bolt.experiments.python.vq_amm as vq_amm
 DEFAULT_IDIOT_OPTS = {
     "max_input_len": 1e6,
     "max_input_numel": 1e8,
-    "ncodebooks": 32,
+    "ncodebooks": None,
 }
 
 class IdiotLinear(nn.Linear):
@@ -98,6 +98,10 @@ class IdiotLinear(nn.Linear):
 
     def fit_lut(self):
         ncodebooks = self._idiot_opts["ncodebooks"]
+        (out_features, in_features) = self.weight.data.shape
+        if ncodebooks is None:
+            ncodebooks = min(in_features // 4, out_features)
+        print(f"fitting pluto (in, out) = {(in_features, out_features)} with {ncodebooks} ncodebooks")
         self._pluto = vq_amm.PlutoMatmul(ncodebooks=ncodebooks)
         # TODO- minimize n_codebooks s.t. 
         #   n_codebooks < self.weight.shape[0]

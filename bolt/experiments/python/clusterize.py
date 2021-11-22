@@ -1001,7 +1001,7 @@ def encoded_pluto(
     orig_prod = torch.from_numpy(orig_prod_np)
     orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
     softmaxAB = torch.from_numpy(orig_prod_softmax_np)
-    print(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
+    #rint(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
     kld_loss = torch.nn.KLDivLoss(reduction='sum')
     def pluto_obj(T_cur):
         #pred_probs = F.softmax(G @ T_cur, dim=1)
@@ -1017,7 +1017,7 @@ def encoded_pluto(
     T_init = torch.from_numpy(T_0_np)
     res = minimize(
         pluto_obj, T_init, method='l-bfgs',
-        max_iter=100, disp=3)
+        max_iter=100, disp=0)
     torch_result = res.x.numpy()
     return torch_result
 
@@ -1815,7 +1815,7 @@ def learn_pluto(
     # optimize centroids discriminatively conditioned on assignments
     X_enc = mithral_encode(X, all_splits)
 
-    print("vingilote fitting dense lstsq to X_res")
+    print("pluto fitting dense lstsq to X_res")
     print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
     # W = encoded_lstsq(X_enc=X_enc, Y=X_res)
 

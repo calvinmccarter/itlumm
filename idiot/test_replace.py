@@ -71,8 +71,8 @@ if __name__ == "__main__":
     idiot_input = []  # list for storing all activations
     idiot_opts = {
         "max_input_len": 1000,
-        "max_input_numel": 1e6, #32*64*10,
-        "ncodebooks": 16,
+        "max_input_numel": 1e8, #32*64*10,
+        "ncodebooks": None,
     }
 
     # XXX - only fc1 in MLPMixer.MLP has gelu
