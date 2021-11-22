@@ -6,6 +6,7 @@ import abc
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sb
+import time
 
 from . import product_quantize as pq
 from . import subspaces as subs
@@ -259,9 +260,26 @@ class MultiCodebookEncoder(abc.ABC):
                     # print("fraction of low bits that are 1: ",
                     #       np.mean(dists % 2 == 1))  # ya, ~.5, or maybe ~.495
 
-                    while dists.shape[-1] > 2:
-                        dists = (dists[:, :, ::2] + dists[:, :, 1::2] + 1) // 2
-                    dists = (dists[:, :, 0] + dists[:, :, 1] + 1) // 2
+                    start_time = time.time()
+                    dists_orig = dists.copy()
+                    while dists_orig.shape[-1] > 2:
+                        dists_orig = (dists_orig[:, :, ::2] + dists_orig[:, :, 1::2] + 1) // 2
+                    dists_orig = (dists_orig[:, :, 0] + dists_orig[:, :, 1] + 1) // 2
+                    duration = time.time() - start_time
+                    print(f"accumulate_how:mean method:orig {dists.shape}->{dists_orig.shape} duration:{duration}")
+
+                    dists_new = dists.copy()
+                    start_time = time.time()
+                    dists_new = dists_new.transpose().copy()
+                    while dists_new.shape[0] > 2:
+                        dists_new = (dists_new[::2, :, :] + dists_new[1::2, :, :] + 1) // 2
+                    dists_new = (dists_new[0, :, :] + dists_new[1, :, :] + 1) // 2
+                    dists_new = dists_new.transpose().copy()
+                    duration = time.time() - start_time
+                    print(f"accumulate_how:mean method:new {dists.shape}->{dists_new.shape} duration:{duration}")
+                    assert np.array_equal(dists_orig, dists_new)
+
+                    dists = dists_orig
                     dists = dists.sum(axis=-1)  # clipping not needed
 
                     # undo biasing; if low bits are {0,0} or {1,1}, no bias
@@ -564,9 +582,12 @@ def _mithral_quantize_luts(luts, lut_work_const, force_power_of_2=True):
     # gaps[np.argmax(gaps)] = 0  # use 2nd highest
     gap = np.max(gaps)
     if force_power_of_2:
-        exponent = np.ceil(np.log2(gap))
-        scale = 2 ** int(-exponent)  # scale is a power of 2, so can just shift
-        scale *= (255.5 - 1e-10)  # so max val is at most 255
+        if gap == 0.0:
+            scale = 1e-10
+        else:
+            exponent = np.ceil(np.log2(gap))
+            scale = 2 ** int(-exponent)  # scale is a power of 2, so can just shift
+            scale *= (255.5 - 1e-10)  # so max val is at most 255
     else:
         scale = (255.5 - 1e-10) / gap
 
@@ -695,7 +716,7 @@ class PlutoEncoder(MultiCodebookEncoder):
         self.lut_work_const = lut_work_const
 
     def name(self):
-        return "{}_{}".format('mithral', super().name())
+        return "{}_{}".format('pluto', super().name())
 
     def params(self):
         return {'ncodebooks': self.ncodebooks,

@@ -1,8 +1,10 @@
 fastcluster
 joblib
+jupyterlab
 scikit-learn
 pandas
 seaborn
 numba
 torch
+torchvision
 zstandard
