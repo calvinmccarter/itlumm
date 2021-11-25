@@ -10,8 +10,9 @@ from PIL import Image
 from torchvision import transforms
 
 from idiot.idiot import (
-    get_descendant_by_fullname,
+    get_descendant,
     replace_descendants,
+    set_all_descendant_attrs,
 )
 
 from idiot.mlp_mixer import MLPMixer
@@ -76,12 +77,11 @@ if __name__ == "__main__":
     values = values.detach().numpy()
     print(f"original MLPMixer {class_names} {values}")
 
-    idiot_phase = {}  # mapping layer fullname to phase str
     idiot_ordering = []  # ordered list of IdiotLinear layers
     idiot_input = []  # list for storing all activations
+    max_input_len = 1024
     idiot_opts = {
-        "max_input_len": 1000,
-        "max_input_numel": 1e8, #32*64*10,
+        "max_input_len": max_input_len,
         "ncodebooks": None,
     }
 
@@ -91,9 +91,7 @@ if __name__ == "__main__":
 
     new_net = replace_descendants(
         net,
-        idiot_phase,
         idiot_ordering,
-        idiot_input,
         idiot_opts,
         "",
         f_act,
@@ -107,11 +105,9 @@ if __name__ == "__main__":
     values = values.detach().numpy()
     print(f"after Linear->IdiotLinear {class_names} {values}")
 
-    for lname in idiot_phase:
-        idiot_phase[lname] = "find_ordering"
-    output = new_net(image)  # mutates ordering
-    for lname in idiot_phase:
-        idiot_phase[lname] = "noop"
+    set_all_descendant_attrs(new_net, "_idiot_phase", "find_ordering")
+    output = new_net(image)  # mutates idiot_ordering
+    set_all_descendant_attrs(new_net, "_idiot_phase", "noop")
 
 
     def f_softmax(x):
@@ -119,36 +115,105 @@ if __name__ == "__main__":
     #print(new_net)
     #print(output)
     #print(f_softmax(output))
-    #print(get_descendant_by_fullname(new_net, idiot_ordering[-1]))
-    get_descendant_by_fullname(
+    #print(get_descendant(new_net, idiot_ordering[-1]))
+    get_descendant(
         new_net, idiot_ordering[-1])._idiot_activation = f_softmax
     #print(new_net)
 
     test_loader = torch.utils.data.DataLoader(
         test_data,
-        batch_size=4,
+        batch_size=8,
         shuffle=False,
         num_workers=1,
     )
 
+    # PLUTO
     with torch.no_grad():
         for lname in idiot_ordering:
-            idiot_phase[lname] = "collect_input"
-            idiot_input.clear()
+            idiot_input = []
+            get_descendant(new_net, lname)._idiot_phase = "collect_input"
+            get_descendant(new_net, lname)._idiot_input = idiot_input
+            acc = 0.0
             for data, label in test_loader:
+                # Modifies idiot_input_cur and idiot_output_next
                 output = new_net(data)
-            #idiot_phase[lname] = "noop"
-            idiot_input_concat = torch.cat(idiot_input, dim=0)
-            print(lname)
+                acc += (output.argmax(dim=1) == label).float().mean()
+            acc = acc / len(test_loader)
+            print(f"idiot-pluto: before replacing {lname}: acc={acc}")
 
-            get_descendant_by_fullname(new_net, lname).fit_lut()
-            idiot_phase[lname] = "apply_lut"
+            idiot_input_concat = torch.cat(idiot_input, dim=0)
+            get_descendant(new_net, lname).fit_lut(idiot_input_concat, None)
+            get_descendant(new_net, lname)._idiot_phase = "apply_lut"
 
             output = torch.softmax(new_net(image).squeeze(), dim = 0)
             values, indices = torch.topk(output, k = 5)
             class_names = [cifar10_classes[i] for i in indices.numpy().astype(int)]
             values = values.detach().numpy()
             print(f"after Pluto {class_names} {values}")
+        acc = 0.0
+        for data, label in test_loader:
+            # Modifies idiot_input_cur and idiot_output_next
+            output = new_net(data)
+            acc += (output.argmax(dim=1) == label).float().mean()
+        acc = acc / len(test_loader)
+        print(f"idiot-pluto: final {max_input_len}: acc={acc}")
 
 
-            # TODO fine-tune
+    # BBPLUTO
+    """
+    print("\n".join(idiot_ordering))
+    with torch.no_grad():
+        idiot_output_next = None
+        idiot_name_next = None
+        for ix_cur, name_cur in enumerate(idiot_ordering):
+            print(f"current {name_cur}")
+            if idiot_output_next is None:
+                idiot_output_next_concat = None
+            else:
+                print(f"idiot_output_next_concat {idiot_name_next}")
+                assert name_cur == idiot_name_next
+                idiot_output_next_concat = torch.cat(idiot_output_next, dim=0)
+            
+            idiot_input_cur = []
+            get_descendant(new_net, name_cur)._idiot_phase = "collect_input"
+            get_descendant(new_net, name_cur)._idiot_input = idiot_input_cur
+
+            if ix_cur + 1 < len(idiot_ordering):
+                name_next = idiot_ordering[ix_cur + 1]
+                idiot_name_next = name_next
+                idiot_output_next = []
+                get_descendant(new_net, name_next)._idiot_phase = "collect_output"
+                get_descendant(new_net, name_next)._idiot_output = idiot_output_next
+                print(f"setting {name_next} collect_output")
+
+            acc = 0.0
+            for data, label in test_loader:
+                # Modifies idiot_input_cur and idiot_output_next
+                output = new_net(data)
+                acc += (output.argmax(dim=1) == label).float().mean()
+            acc = acc / len(test_loader)
+            print(f"idiot-bb-pluto before replacing {name_cur}: acc={acc}")
+
+            # Compute hash function and LUT
+            print(name_cur)
+            idiot_input_cur_concat = torch.cat(idiot_input_cur, dim=0)
+            # Assumes the forward-pass in each iteration sees the same data
+            get_descendant(new_net, name_cur).fit_lut(
+                idiot_input_cur_concat, idiot_output_next_concat)
+
+            # Switch to hash & LUT
+            get_descendant(new_net, name_cur)._idiot_phase = "apply_lut"
+
+            # Restore noop phase to nextnext linear layer
+            if ix_cur + 2 < len(idiot_ordering):
+                name_nextnext = idiot_ordering[ix_cur + 2]
+                get_descendant(new_net, name_nextnext)._idiot_phase = "noop"
+
+            # XXX - what about residual connections?
+
+            output = torch.softmax(new_net(image).squeeze(), dim = 0)
+            values, indices = torch.topk(output, k = 5)
+            class_names = [cifar10_classes[i] for i in indices.numpy().astype(int)]
+            values = values.detach().numpy()
+            print(f"after BBPluto {class_names} {values}")
+    """

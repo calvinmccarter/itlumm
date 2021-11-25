@@ -950,6 +950,7 @@ def encoded_pluto(
     X_enc=None,
     X_bin=None,
     B=None,
+    output=None,
     bias=None,
     activation=None,
     loss_func=None,
@@ -961,10 +962,11 @@ def encoded_pluto(
     B: (D, M)
     G: (N, n_codebooks*16)
     P: (n_codebooks*16, D)
+    output: (N, M) desired result of matmul
 
     X_enc: (N, n_codebooks)
     X_bin: (N, n_codebooks*16)
-    Y: (N, D) -- ie size of A because predicting A_res
+    Y: (N, D) -- ie size of A because predicting A_res - unused
 
     returns:
     T: np.ndarray of shape (n_codebooks*16, M) - lookup table
@@ -979,8 +981,7 @@ def encoded_pluto(
         # TODO: if activation is None, ignore bias since
         # bias does not affect sse_loss
     else:
-        if bias is not None:
-            raise NotImplementedError("nonlinear activation with bias")
+        raise NotImplementedError("nonlinear activation not impl yet")
 
     if bias is None:
         bias = torch.tensor(0.)
@@ -994,8 +995,13 @@ def encoded_pluto(
 
     G_np = X_bin.astype(np.float32)
     G = torch.from_numpy(G_np)
-    orig_prod_np = X_orig @ B
     B_torch = torch.from_numpy(B)
+    
+    
+    if output is not None:
+        orig_prod_np = output - bias.numpy()
+    else:
+        orig_prod_np = X_orig @ B
 
     X_orig_torch = torch.from_numpy(X_orig)
     orig_prod = torch.from_numpy(orig_prod_np)
@@ -1790,7 +1796,7 @@ def _learn_mithral_initialization(X, ncodebooks,
 
 @_memory.cache
 def learn_pluto(
-    X, Q, ncodebooks, activation, bias, **kwargs,
+    X, Q, ncodebooks, activation, output, bias, **kwargs,
 ):
     Q = np.atleast_2d(Q)
 
@@ -1802,7 +1808,8 @@ def learn_pluto(
     X_orig = X.astype(np.float32)
 
     X_res0, all_splits0, all_centroids0, all_buckets0 = \
-        _learn_mithral_initialization(X, ncodebooks, pq_perm_algo='start')
+        _learn_mithral_initialization(
+            X, ncodebooks, pq_perm_algo='start', **kwargs)
 
     mse_orig = (X_orig * X_orig).mean()
     mse0 = (X_res0 * X_res0).mean()
@@ -1821,7 +1828,8 @@ def learn_pluto(
 
     T_badshape = encoded_pluto(
         X_orig=X_orig, all_centroids=all_centroids,
-        Y=X_res, X_enc=X_enc, B=Q.T, bias=bias, activation=activation)
+        Y=X_res, X_enc=X_enc, B=Q.T, output=output, bias=bias,
+        activation=activation)
     # shape: (n_codebooks*16, M)
     luts = T_badshape.T # (M, n_codebooks*16)
     luts = luts.reshape(M, ncodebooks, ncentroids_per_codebook)

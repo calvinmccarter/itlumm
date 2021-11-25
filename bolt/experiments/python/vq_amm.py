@@ -375,13 +375,13 @@ class PlutoMatmul(VQMatmul):
         nlookups = N * M * self.ncodebooks
         return {amm.KEY_NMULTIPLIES: nmuls, KEY_NLOOKUPS: nlookups}
 
-    def fit(self, A, B, Y=None, bias=None):
+    def fit(self, A, B, output=None, bias=None):
         """
 
         Args:
             A: left of shape (N, D)
             B: right of shape (D, M)
-            Y: Y = A @ B if not specified -- see ApproxMatmul
+            Y: desired A @ B if not None -- see ApproxMatmul
             bias: shape broadcasts when adding A @ B + bias
         """
         # TODO use bias with nonlinearity
@@ -393,7 +393,7 @@ class PlutoMatmul(VQMatmul):
         # self.enc.fit sets self.enc.splits_lists and self.enc.centroids
         # self.enc.fit also calls clusterize.learn_pluto
         self.luts, self.offset, self.scale = self.enc.fit(
-            A, B.T, bias=bias)
+            A, B.T, output=output, bias=bias)
         self.B = B
 
     def set_B(self, B):

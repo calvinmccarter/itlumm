@@ -706,10 +706,10 @@ class PlutoEncoder(MultiCodebookEncoder):
         return {'ncodebooks': self.ncodebooks,
                 'lut_work_const': self.lut_work_const}
 
-    def fit(self, X, Q, bias=None):
+    def fit(self, X, Q, output=None, bias=None):
         # Q = B.T, where A is (N, D) and B is (D, M). So Q is (M, D)
         self.splits_lists, self.centroids, luts = clusterize.learn_pluto(
-            X, Q, self.ncodebooks, self.activation, bias)
+            X, Q, self.ncodebooks, self.activation, output, bias, verbose=0)
         # self._learn_lut_quantization(X, Q)
 
         """

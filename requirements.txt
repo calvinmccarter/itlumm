@@ -8,4 +8,4 @@ numba
 torch
 torchvision
 zstandard
-git+https://github.com/rfeinman/pytorch-minimize.git
+git+https://github.com/rfeinman/pytorch-minimize.git@8c5da1c7c72b4374bf62921ad965253e8b857364

@@ -12,7 +12,6 @@ import bolt.experiments.python.vq_amm as vq_amm
 
 DEFAULT_IDIOT_OPTS = {
     "max_input_len": 1e6,
-    "max_input_numel": 1e8,
     "ncodebooks": None,
 }
 
@@ -32,9 +31,7 @@ class IdiotLinear(nn.Linear):
         bias=True,
         device=None,
         dtype=None,
-        idiot_phase=None,
         idiot_ordering=None,
-        idiot_input=None,
         idiot_opts=None,
         idiot_name=None,
         idiot_activation=None,
@@ -47,34 +44,19 @@ class IdiotLinear(nn.Linear):
             dtype=dtype,
         )
 
-        self._idiot_phase = idiot_phase  # external
         self._idiot_ordering = idiot_ordering  # external
-        self._idiot_input = idiot_input  # external
         self._idiot_opts = deepcopy(DEFAULT_IDIOT_OPTS)
         self._idiot_opts.update(deepcopy(idiot_opts) or {})
         self._idiot_name = deepcopy(idiot_name)
         self._idiot_activation = deepcopy(idiot_activation)
 
-        idiot_phase[idiot_name] = "noop"
-
+        self._idiot_phase = "noop"
+        self._idiot_input = None
+        self._idiot_output = None
         self._pluto = None
 
     def forward(self, input: Tensor) -> Tensor:
-        phase = self._idiot_phase[self._idiot_name]
-        if phase == "find_ordering":
-            self._idiot_ordering.append(self._idiot_name)
-        elif phase == "collect_input":
-            cur_len = input.shape[0] + sum(
-                [inp.shape[0] for inp in self._idiot_input]
-            )
-            cur_numel = math.prod(input.shape) + sum(
-                [math.prod(inp.shape) for inp in self._idiot_input]
-            )
-            max_len = self._idiot_opts["max_input_len"]
-            max_numel = self._idiot_opts["max_input_numel"]
-            if cur_len <= max_len and cur_numel <= max_numel:
-                self._idiot_input.append(input)
-        elif phase == "apply_lut":
+        if self._idiot_phase == "apply_lut":
             #rint(f"apply_lut {self._idiot_name}")
             #rint(f"input shape {input.shape}")
             #rint(f"weight shape {self.weight.data.shape}")
@@ -93,14 +75,49 @@ class IdiotLinear(nn.Linear):
             output = torch.from_numpy(output_np).reshape(output_shape)
             output += self.bias.data
             return output
-        
-        return F.linear(input, self.weight, self.bias)
+        elif self._idiot_phase == "find_ordering":
+            self._idiot_ordering.append(self._idiot_name)
+            return F.linear(input, self.weight, self.bias)
+        elif self._idiot_phase == "collect_input":
+            if self._idiot_input is None:
+                raise ValueError("needs _idiot_input for collect_input phase")
+            cur_len = input.shape[0] + sum(
+                [inp.shape[0] for inp in self._idiot_input]
+            )
+            max_len = self._idiot_opts["max_input_len"]
+            if cur_len <= max_len:
+                self._idiot_input.append(input)
+            return F.linear(input, self.weight, self.bias)
+        elif self._idiot_phase == "collect_output":
+            if self._idiot_output is None:
+                raise ValueError("needs _idiot_output for collect_output")
+            output = F.linear(input, self.weight, self.bias)
+            cur_len = output.shape[0] + sum(
+                [outp.shape[0] for outp in self._idiot_output]
+            )
+            max_len = self._idiot_opts["max_input_len"]
+            if cur_len <= max_len:
+                self._idiot_output.append(output - self.bias)
+            return output
+        elif self._idiot_phase == "noop":
+            return F.linear(input, self.weight, self.bias)
+        else:
+            raise ValueError(f"unexpected _idiot_phase: {self._idiot_phase}")
+            
 
-    def fit_lut(self):
+    def fit_lut(self, input, output):
+        """
+
+        Args:
+            input: A from A @ B
+            output: desired A @ B - not including bias or activation
+        """
         ncodebooks = self._idiot_opts["ncodebooks"]
         (out_features, in_features) = self.weight.data.shape
         if ncodebooks is None:
-            ncodebooks = min(in_features // 4, out_features)
+            ncodebooks = 2 ** math.floor(math.log2(in_features // 2))
+            # XXX upcast_every assertion
+            ncodebooks = min(ncodebooks, 256)
         print(f"fitting pluto (in, out) = {(in_features, out_features)} with {ncodebooks} ncodebooks")
         self._pluto = vq_amm.PlutoMatmul(ncodebooks=ncodebooks)
         # TODO- minimize n_codebooks s.t. 
@@ -108,16 +125,22 @@ class IdiotLinear(nn.Linear):
         #   accuracy loss < 0.99^(1/num_linears)
         #   n_ops_pluto < n_ops_original
         #   or, keep increasing ncodebooks until good enough
-        input = torch.cat(self._idiot_input, dim=0)
         input_np = input.reshape((-1, input.shape[-1])).numpy()
-        #rint(f"fit_lut {self._idiot_name}")
+        print(f"fit_lut {self._idiot_name}")
         #rint(self)
-        #rint(input_np.shape)
-        #rint(self.weight.shape)
-        #rint(self.bias.shape)
+        print(f"input: {input.shape} -> {input_np.shape}")
+        if output is not None:
+            print(f"output: {output.shape if output is not None else None}")
+        print(f"weight: {self.weight.shape}   bias:{self.bias.shape}")
+        if output is None:
+            output_np = None
+        else:
+            assert output.shape == tuple(list(input.shape[:-1]) + [out_features])
+            output_np = output.reshape((-1, output.shape[-1])).numpy()
         self._pluto.fit(
             input_np,
             self.weight.data.transpose(0, 1).numpy(),
+            output=output_np,
             bias=self.bias.data.numpy(),
         )
 
@@ -126,8 +149,8 @@ class IdiotLinear(nn.Linear):
         sin = self._idiot_name
         idx = self._idiot_ordering.index(sin)
         my_repr = [
-            f"_idiot_phase[self._idiot_name]={self._idiot_phase[sin]}",
             f"_idiot_ordering.index(\"{sin}\")={idx}",
+            f"_idiot_phase={self._idiot_phase}",
             f"_idiot_opts={self._idiot_opts}",
             f"_idiot_name={self._idiot_name}",
             f"_idiot_activation={self._idiot_activation}",
@@ -137,9 +160,7 @@ class IdiotLinear(nn.Linear):
 
 def replace_linear(
     mod: nn.Linear,
-    idiot_phase,
     idiot_ordering,
-    idiot_input,
     idiot_opts,
     idiot_name,
     idiot_activation,
@@ -162,9 +183,7 @@ def replace_linear(
     newmod = IdiotLinear(
         in_features=mod.in_features,
         out_features=mod.out_features,
-        idiot_phase=idiot_phase,
         idiot_ordering=idiot_ordering,
-        idiot_input=idiot_input,
         idiot_opts=idiot_opts,
         idiot_name=idiot_name,
         idiot_activation=idiot_activation,
@@ -177,9 +196,7 @@ def replace_linear(
 
 def replace_descendants(
     mod: nn.Module,
-    idiot_phase,
     idiot_ordering,
-    idiot_input,
     idiot_opts,
     idiot_name,
     idiot_activation,
@@ -187,9 +204,7 @@ def replace_descendants(
     if type(mod) == nn.Linear:
         new_mod = replace_linear(
             mod,
-            idiot_phase=idiot_phase,
             idiot_ordering=idiot_ordering,
-            idiot_input=idiot_input,
             idiot_opts=idiot_opts,
             idiot_name=idiot_name,
             idiot_activation=idiot_activation,
@@ -201,9 +216,7 @@ def replace_descendants(
         fullname = idiot_name + "." + name
         new_children[name] = replace_descendants(
             child,
-            idiot_phase=idiot_phase,
             idiot_ordering=idiot_ordering,
-            idiot_input=idiot_input,
             idiot_opts=idiot_opts,
             idiot_name=fullname,
             idiot_activation=idiot_activation,
@@ -213,11 +226,40 @@ def replace_descendants(
     return mod
 
 
-def get_descendant_by_fullname(
+def set_all_descendant_attrs(
+    mod,
+    name,
+    value,
+):
+    r"""Sets all IdiotLinear descendants' attrname to attrvalue.
+
+    Args:
+        mod: nn.Module
+            Top-level network that contains all IdiotLinear modules.
+        name: str
+            Name of attribute we want to modify.
+        value: str
+            Value we want to apply to the attribute. Value is deepcopied.
+    """
+    if type(mod) == IdiotLinear:
+        assert hasattr(mod, name)
+        setattr(mod, name, deepcopy(value))
+    for _, child in mod.named_children():
+        set_all_descendant_attrs(child, name, value)
+
+
+def get_descendant(
     mod,
     fullname,
 ):
-    """
+    r"""
+
+    Args:
+
+        mod: nn.Module
+            Top-level network that contains the desired IdiotLinear module.
+        fullname: str
+            Search str applied to IdiotLinear module _idiot_name attribute.
 
     Returns:
         reference to Module if found, None otherwise.
@@ -225,7 +267,7 @@ def get_descendant_by_fullname(
     if type(mod) == IdiotLinear and mod._idiot_name == fullname:
         return mod
     for name, child in mod.named_children():
-        maybe = get_descendant_by_fullname(child, fullname)
+        maybe = get_descendant(child, fullname)
         if maybe is not None:
             return maybe
     return None
