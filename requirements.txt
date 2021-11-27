@@ -1,11 +1,13 @@
+Cython
 fastcluster
 joblib
 jupyterlab
 scikit-learn
 pandas
+pytest
 seaborn
 numba
 torch
 torchvision
 zstandard
-git+https://github.com/rfeinman/pytorch-minimize.git@8c5da1c7c72b4374bf62921ad965253e8b857364
+# pytorch-minimize, but need to clone for some reason

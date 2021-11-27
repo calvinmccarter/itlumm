@@ -1,0 +1,3 @@
+[submodule "bolt/third_party/kmc2"]
+	path = bolt/third_party/kmc2
+	url = https://github.com/mneilly/kmc2
