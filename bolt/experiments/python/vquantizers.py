@@ -685,7 +685,13 @@ class VingiloteEncoder(MultiCodebookEncoder):
 
 class PlutoEncoder(MultiCodebookEncoder):
 
-    def __init__(self, ncodebooks, activation=None, lut_work_const=-1):
+    def __init__(
+        self,
+        ncodebooks,
+        activation=None,
+        nonzeros_heuristic='pq',
+        lut_work_const=-1,
+    ):
         super().__init__(
             ncodebooks=ncodebooks, ncentroids=16,
             # quantize_lut=True, upcast_every=64,
@@ -697,6 +703,7 @@ class PlutoEncoder(MultiCodebookEncoder):
             # quantize_lut=True, upcast_every=1,
             accumulate_how='mean')
         self.activation = activation
+        self.nonzeros_heuristic = nonzeros_heuristic
         self.lut_work_const = lut_work_const
 
     def name(self):
@@ -709,7 +716,8 @@ class PlutoEncoder(MultiCodebookEncoder):
     def fit(self, X, Q, output=None, bias=None):
         # Q = B.T, where A is (N, D) and B is (D, M). So Q is (M, D)
         self.splits_lists, self.centroids, luts = clusterize.learn_pluto(
-            X, Q, self.ncodebooks, self.activation, output, bias, verbose=0)
+            X, Q, self.ncodebooks, self.activation, output, bias, 
+            nonzeros_heuristic=self.nonzeros_heuristic, verbose=0)
         # self._learn_lut_quantization(X, Q)
 
         """

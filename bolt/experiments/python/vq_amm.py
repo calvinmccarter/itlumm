@@ -329,8 +329,15 @@ class VingiloteMatmul(VQMatmul):
 
 class PlutoMatmul(VQMatmul):
 
-    def __init__(self, ncodebooks, activation=None, lut_work_const=-1):
+    def __init__(
+        self,
+        ncodebooks,
+        activation=None,
+        nonzeros_heuristic="pq",
+        lut_work_const=-1,
+    ):
         self.activation = activation
+        self.nonzeros_heuristic = nonzeros_heuristic
         self.lut_work_const = lut_work_const
         if (lut_work_const is not None) and (lut_work_const > 0) and (
                 lut_work_const > ncodebooks):
@@ -354,6 +361,7 @@ class PlutoMatmul(VQMatmul):
         pluto_enc = vq.PlutoEncoder(
             ncodebooks=ncodebooks,
             activation=self.activation,
+            nonzeros_heuristic=self.nonzeros_heuristic,
             lut_work_const=self.lut_work_const,
         )
         return pluto_enc

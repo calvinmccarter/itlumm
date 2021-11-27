@@ -1651,11 +1651,17 @@ def group_X_cols(X):
     return ix
 
 
-
 @_memory.cache
-def _learn_ithildin_initialization(X, X_weights, ncodebooks,
-                                   pq_perm_algo='start', **kwargs):
-    reordered_ixs = group_X_cols(X)
+def _learn_mithral_initialization(
+    X,
+    ncodebooks,
+    pq_perm_algo='start',
+    nonzeros_heuristic='pq',
+    **kwargs,
+):
+    heuristics = ('pq', 'pca', 'disjoint_pca', 'r2')
+    assert nonzeros_heuristic in heuristics
+    print(f'_learn_mithral_initialization heuristic {nonzeros_heuristic}')
 
     N, D = X.shape
     ncentroids_per_codebook = 16
@@ -1669,18 +1675,18 @@ def _learn_ithildin_initialization(X, X_weights, ncodebooks,
     all_splits = []
     pq_idxs = _pq_codebook_start_end_idxs(X, ncodebooks, algo=pq_perm_algo)
     subvec_len = int(np.ceil(D / ncodebooks))  # for non-pq heuristics
-    
-    r2_ixs = []
-    r2_ixs_set = set()
-    for c in range(ncodebooks):
-        start_idx, end_idx = pq_idxs[c]
-        c_idxs = [reordered_ixs[ii] for ii in range(start_idx, end_idx)]
-        r2_ixs_set.update(c_idxs)
-        r2_ixs.append(np.array(c_idxs))
-    assert(r2_ixs_set == set(list(range(0, D))))
-       
 
-    nonzeros_heuristic = 'r2'
+    if nonzeros_heuristic == 'r2':
+        reordered_ixs = group_X_cols(X)
+        r2_ixs = []
+        r2_ixs_set = set()
+        for c in range(ncodebooks):
+            start_idx, end_idx = pq_idxs[c]
+            c_idxs = [reordered_ixs[ii] for ii in range(start_idx, end_idx)]
+            r2_ixs_set.update(c_idxs)
+            r2_ixs.append(np.array(c_idxs))
+        assert(r2_ixs_set == set(list(range(0, D))))
+
 
     # ------------------------ 0th iteration; initialize all codebooks
     all_splits = []
@@ -1689,82 +1695,17 @@ def _learn_ithildin_initialization(X, X_weights, ncodebooks,
         if nonzeros_heuristic == 'pq':
             start_idx, end_idx = pq_idxs[c]
             idxs = np.arange(start_idx, end_idx)
+        elif nonzeros_heuristic == 'pca':
+            v = subs.top_principal_component(X_res)
+            idxs = np.argsort(np.abs(v))[:-subvec_len]
+        elif nonzeros_heuristic == 'disjoint_pca':
+            use_X_res = X_res.copy()
+            if c > 0:  # not the first codebook
+                use_X_res[:, idxs] = 0  # can't use same subspace
+            v = subs.top_principal_component(use_X_res)
+            idxs = np.argsort(np.abs(v))[:-subvec_len]
         elif nonzeros_heuristic == 'r2':
             idxs = r2_ixs[c]
-        elif nonzeros_heuristic == 'pca':
-            v = subs.top_principal_component(X_res)
-            idxs = np.argsort(np.abs(v))[:-subvec_len]
-        elif nonzeros_heuristic == 'disjoint_pca':
-            use_X_res = X_res.copy()
-            if c > 0:  # not the first codebook
-                use_X_res[:, idxs] = 0  # can't use same subspace
-            v = subs.top_principal_component(use_X_res)
-            idxs = np.argsort(np.abs(v))[:-subvec_len]
-
-        use_X_res = X_res[:, idxs]
-        use_X_orig = X_orig[:, idxs]
-        use_X_weights = X_weights[:, idxs]
-
-        # learn codebook to soak current residuals
-        multisplits, _, buckets = learn_multisplits(
-            use_X_res, X_orig=use_X_orig,
-            return_centroids=False, return_buckets=True, **kwargs)
-        for split in multisplits:
-            split.dim = idxs[split.dim]
-        all_splits.append(multisplits)
-        all_buckets.append(buckets)
-
-        # update residuals and store centroids
-        centroid = np.zeros(D, dtype=np.float32)
-        for b, buck in enumerate(buckets):
-            if len(buck.point_ids):
-                centroid[:] = 0
-                centroid[idxs] = buck.col_means()
-                X_res[buck.point_ids] -= centroid
-                # update centroid here in case we want to regularize it somehow
-                all_centroids[c, b] = centroid
-
-        # print("X_res mse / X mse: ",
-        #       (X_res * X_res).mean() / (X_orig * X_orig).mean())
-
-    return X_res, all_splits, all_centroids, all_buckets
-
-
-
-@_memory.cache
-def _learn_mithral_initialization(X, ncodebooks,
-                                  pq_perm_algo='start', **kwargs):
-    N, D = X.shape
-    ncentroids_per_codebook = 16
-
-    X = X.astype(np.float32)
-    X_res = X.copy()
-    X_orig = X
-
-    all_centroids = np.zeros(
-        (ncodebooks, ncentroids_per_codebook, D), dtype=np.float32)
-    all_splits = []
-    pq_idxs = _pq_codebook_start_end_idxs(X, ncodebooks, algo=pq_perm_algo)
-    subvec_len = int(np.ceil(D / ncodebooks))  # for non-pq heuristics
-
-    nonzeros_heuristic = 'pq'
-
-    # ------------------------ 0th iteration; initialize all codebooks
-    all_splits = []
-    all_buckets = []
-    for c in range(ncodebooks):
-        if nonzeros_heuristic == 'pq':
-            start_idx, end_idx = pq_idxs[c]
-            idxs = np.arange(start_idx, end_idx)
-        elif nonzeros_heuristic == 'pca':
-            v = subs.top_principal_component(X_res)
-            idxs = np.argsort(np.abs(v))[:-subvec_len]
-        elif nonzeros_heuristic == 'disjoint_pca':
-            use_X_res = X_res.copy()
-            if c > 0:  # not the first codebook
-                use_X_res[:, idxs] = 0  # can't use same subspace
-            v = subs.top_principal_component(use_X_res)
-            idxs = np.argsort(np.abs(v))[:-subvec_len]
 
         use_X_res = X_res[:, idxs]
         use_X_orig = X_orig[:, idxs]
@@ -1822,8 +1763,8 @@ def learn_pluto(
     # optimize centroids discriminatively conditioned on assignments
     X_enc = mithral_encode(X, all_splits)
 
-    print("pluto fitting dense lstsq to X_res")
-    print(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
+    #rint("pluto fitting dense lstsq to X_res")
+    #rint(f"  with X_enc:{X_enc.shape} Y:{X_res.shape}")
     # W = encoded_lstsq(X_enc=X_enc, Y=X_res)
 
     T_badshape = encoded_pluto(
@@ -1869,7 +1810,7 @@ def learn_vingilote(
 
     
     X_res0, all_splits0, all_centroids0, all_buckets0 = \
-        _learn_ithildin_initialization(X, Xweights, ncodebooks, pq_perm_algo='start')
+        _learn_mithral_initialization(X, Xweights, ncodebooks, pq_perm_algo='start')
 
     mse_orig = (X_orig * X_orig).mean()
     mse0 = (X_res0 * X_res0).mean()

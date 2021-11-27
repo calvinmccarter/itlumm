@@ -83,6 +83,7 @@ if __name__ == "__main__":
     idiot_opts = {
         "max_input_len": max_input_len,
         "ncodebooks": None,
+        "nonzeros_heuristic": "r2",
     }
 
     # XXX - only fc1 in MLPMixer.MLP has gelu
