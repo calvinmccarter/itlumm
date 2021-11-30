@@ -79,11 +79,13 @@ if __name__ == "__main__":
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
     idiot_input = []  # list for storing all activations
-    max_input_len = 1024
+    max_collect_samples = 1024
+    algorithm = "mithral"
     idiot_opts = {
-        "max_input_len": max_input_len,
+        "max_collect_samples": max_collect_samples,
         "ncodebooks": None,
         "nonzeros_heuristic": "r2",
+        "algorithm": algorithm,
     }
 
     # XXX - only fc1 in MLPMixer.MLP has gelu
@@ -140,7 +142,7 @@ if __name__ == "__main__":
                 output = new_net(data)
                 acc += (output.argmax(dim=1) == label).float().mean()
             acc = acc / len(test_loader)
-            print(f"idiot-pluto: before replacing {lname}: acc={acc}")
+            print(f"idiot-{algorithm}: before replacing {lname}: acc={acc}")
 
             idiot_input_concat = torch.cat(idiot_input, dim=0)
             get_descendant(new_net, lname).fit_lut(idiot_input_concat, None)
@@ -150,14 +152,14 @@ if __name__ == "__main__":
             values, indices = torch.topk(output, k = 5)
             class_names = [cifar10_classes[i] for i in indices.numpy().astype(int)]
             values = values.detach().numpy()
-            print(f"after Pluto {class_names} {values}")
+            print(f"after {algorithm} {class_names} {values}")
         acc = 0.0
         for data, label in test_loader:
             # Modifies idiot_input_cur and idiot_output_next
             output = new_net(data)
             acc += (output.argmax(dim=1) == label).float().mean()
         acc = acc / len(test_loader)
-        print(f"idiot-pluto: final {max_input_len}: acc={acc}")
+        print(f"idiot-{algorithm}: final {max_collect_samples}: acc={acc}")
 
 
     # BBPLUTO

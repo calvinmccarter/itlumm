@@ -408,7 +408,7 @@ class PlutoMatmul(VQMatmul):
         # TODO: use stddev and shape to verify with less memory
         assert np.array_equal(self.B, B)
 
-    def __call__(self, A, B, bias):
+    def __call__(self, A, B):
         if self.A_enc is None:
             # sets self.A_enc, uses self.enc.splits_lists and self.enc.offsets
             self.A_enc = self.enc.encode_X(A)
@@ -440,7 +440,13 @@ class PlutoMatmul(VQMatmul):
 
 class MithralMatmul(VQMatmul):
 
-    def __init__(self, ncodebooks, lut_work_const=-1):
+    def __init__(
+        self,
+        ncodebooks,
+        nonzeros_heuristic="pq",
+        lut_work_const=-1,
+    ):
+        self.nonzeros_heuristic = nonzeros_heuristic
         self.lut_work_const = lut_work_const
         if (lut_work_const is not None) and (lut_work_const > 0) and (
                 lut_work_const > ncodebooks):
@@ -456,8 +462,12 @@ class MithralMatmul(VQMatmul):
     #     super().fit(self, A, B, Y=Y)
 
     def _create_encoder(self, ncodebooks):
-        return vq.MithralEncoder(
-            ncodebooks=ncodebooks, lut_work_const=self.lut_work_const)
+        mithral_enc = vq.MithralEncoder(
+            ncodebooks=ncodebooks,
+            nonzeros_heuristic=self.nonzeros_heuristic,
+            lut_work_const=self.lut_work_const,
+        )
+        return mithral_enc
 
     def get_params(self):
         return {'ncodebooks': self.ncodebooks,

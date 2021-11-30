@@ -1855,7 +1855,8 @@ def learn_mithral(X, ncodebooks, return_buckets=False,
     X_orig = X.astype(np.float32)
 
     X_res0, all_splits0, all_centroids0, all_buckets0 = \
-        _learn_mithral_initialization(X, ncodebooks, pq_perm_algo='start')
+        _learn_mithral_initialization(
+            X, ncodebooks, pq_perm_algo='start', **kwargs)
 
     mse_orig = (X_orig * X_orig).mean()
     mse0 = (X_res0 * X_res0).mean()
@@ -1866,7 +1867,8 @@ def learn_mithral(X, ncodebooks, return_buckets=False,
         # choose between having wider codebooks at the start vs the end (if
         # there might be a meaningful difference)
         X_res1, all_splits1, all_centroids1, all_buckets1 = \
-            _learn_mithral_initialization(X, ncodebooks, pq_perm_algo='end')
+            _learn_mithral_initialization(
+                X, ncodebooks, pq_perm_algo='end', **kwargs)
         mse1 = (X_res1 * X_res1).mean()
 
         if mse0 <= mse1:

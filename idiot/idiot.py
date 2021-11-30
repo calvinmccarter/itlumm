@@ -11,7 +11,8 @@ from torch import Tensor
 import bolt.experiments.python.vq_amm as vq_amm
 
 DEFAULT_IDIOT_OPTS = {
-    "max_input_len": 1e6,
+    "algorithm": "pluto",
+    "max_collect_samples": 1e6,
     "ncodebooks": None,
     "nonzeros_heuristic": "pq",
 }
@@ -54,7 +55,7 @@ class IdiotLinear(nn.Linear):
         self._idiot_phase = "noop"
         self._idiot_input = None
         self._idiot_output = None
-        self._pluto = None
+        self._lut = None
 
     def forward(self, input: Tensor) -> Tensor:
         if self._idiot_phase == "apply_lut":
@@ -64,11 +65,10 @@ class IdiotLinear(nn.Linear):
             input_shape = input.shape
             input_np = input.reshape((-1, input.shape[-1])).numpy()
             #rint(f"input_np.shape: {input_np.shape}")
-            self._pluto.reset_for_new_task()
-            output_np = self._pluto(
+            self._lut.reset_for_new_task()
+            output_np = self._lut(
                 input_np,
                 self.weight.data.transpose(0, 1).numpy(),
-                bias=self.bias.data.numpy(),
             )
             #rint(f"output_np.shape: {output_np.shape}")
             output_shape = tuple(list(input_shape[:-1]) + [output_np.shape[-1]])
@@ -85,7 +85,7 @@ class IdiotLinear(nn.Linear):
             cur_len = input.shape[0] + sum(
                 [inp.shape[0] for inp in self._idiot_input]
             )
-            max_len = self._idiot_opts["max_input_len"]
+            max_len = self._idiot_opts["max_collect_samples"]
             if cur_len <= max_len:
                 self._idiot_input.append(input)
             return F.linear(input, self.weight, self.bias)
@@ -96,7 +96,7 @@ class IdiotLinear(nn.Linear):
             cur_len = output.shape[0] + sum(
                 [outp.shape[0] for outp in self._idiot_output]
             )
-            max_len = self._idiot_opts["max_input_len"]
+            max_len = self._idiot_opts["max_collect_samples"]
             if cur_len <= max_len:
                 self._idiot_output.append(output - self.bias)
             return output
@@ -114,39 +114,56 @@ class IdiotLinear(nn.Linear):
             output: desired A @ B - not including bias or activation
         """
         ncodebooks = self._idiot_opts["ncodebooks"]
-        (out_features, in_features) = self.weight.data.shape
+        algorithm = self._idiot_opts["algorithm"]
+        (n_out, n_in) = self.weight.data.shape
         if ncodebooks is None:
-            ncodebooks = 2 ** math.floor(math.log2(in_features // 2))
+            ncodebooks = 2 ** math.floor(math.log2(n_in // 2))
             # XXX upcast_every assertion
             ncodebooks = min(ncodebooks, 256)
-        print(f"fitting pluto (in, out) = {(in_features, out_features)} with {ncodebooks} ncodebooks")
-        self._pluto = vq_amm.PlutoMatmul(
-            ncodebooks=ncodebooks,
-            nonzeros_heuristic=self._idiot_opts["nonzeros_heuristic"],
-        )
+        print(f"fit_lut {algorithm} (in, out)={(n_in, n_out)}=>{ncodebooks}")
+
+        # Reshape input and output to be 2d matrices, not tensors
+        input_np = input.reshape((-1, input.shape[-1])).numpy()
+        #rint(f"fit_lut {self._idiot_name}")
+        #rint(self)
+        #rint(f"input: {input.shape} -> {input_np.shape}")
+        if output is not None:
+            rint(f"output: {output.shape if output is not None else None}")
+        #rint(f"weight: {self.weight.shape}   bias:{self.bias.shape}")
+        if output is None:
+            output_np = None
+        else:
+            assert output.shape == tuple(list(input.shape[:-1]) + [n_out])
+            output_np = output.reshape((-1, output.shape[-1])).numpy()
         # TODO- minimize n_codebooks s.t. 
         #   n_codebooks < self.weight.shape[0]
         #   accuracy loss < 0.99^(1/num_linears)
         #   n_ops_pluto < n_ops_original
         #   or, keep increasing ncodebooks until good enough
-        input_np = input.reshape((-1, input.shape[-1])).numpy()
-        print(f"fit_lut {self._idiot_name}")
-        #rint(self)
-        print(f"input: {input.shape} -> {input_np.shape}")
-        if output is not None:
-            print(f"output: {output.shape if output is not None else None}")
-        print(f"weight: {self.weight.shape}   bias:{self.bias.shape}")
-        if output is None:
-            output_np = None
+
+        if algorithm == "pluto":
+            self._lut = vq_amm.PlutoMatmul(
+                ncodebooks=ncodebooks,
+                nonzeros_heuristic=self._idiot_opts["nonzeros_heuristic"],
+            )
+            self._lut.fit(
+                input_np,
+                self.weight.data.transpose(0, 1).numpy(),
+                output=output_np,
+                bias=self.bias.data.numpy(),
+            )
+        elif algorithm == "mithral":
+            self._lut = vq_amm.MithralMatmul(
+                ncodebooks=ncodebooks,
+                nonzeros_heuristic=self._idiot_opts["nonzeros_heuristic"],
+            )
+            self._lut.fit(
+                input_np,
+                self.weight.data.transpose(0, 1).numpy(),
+            )
         else:
-            assert output.shape == tuple(list(input.shape[:-1]) + [out_features])
-            output_np = output.reshape((-1, output.shape[-1])).numpy()
-        self._pluto.fit(
-            input_np,
-            self.weight.data.transpose(0, 1).numpy(),
-            output=output_np,
-            bias=self.bias.data.numpy(),
-        )
+            raise ValueError("invalid algorithm: {algorithm}")
+
 
     def extra_repr(self) -> str:
         super_repr = [super().extra_repr(),]
