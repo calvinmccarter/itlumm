@@ -953,7 +953,7 @@ def encoded_pluto(
     output=None,
     bias=None,
     activation=None,
-    loss_func=None,
+    objective=None,
     K=16,
     lamda=1.0,
 ):
@@ -1009,11 +1009,22 @@ def encoded_pluto(
     softmaxAB = torch.from_numpy(orig_prod_softmax_np)
     #rint(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
     kld_loss = torch.nn.KLDivLoss(reduction='sum')
+    cosine_loss = torch.nn.CosineEmbeddingLoss(margin=0.5, reduce="sum")
+    cosine_target = torch.ones(softmaxAB.shape[0])
     def pluto_obj(T_cur):
-        #pred_probs = F.softmax(G @ T_cur, dim=1)
         #AB_err_loss = kld_loss(pred_probs, softmaxAB)
         # TODO: implement bias and activation
-        AB_err_loss = torch.sum(torch.square(G @ T_cur - orig_prod))
+        if objective == "mse":
+            AB_err_loss = torch.sum(torch.square(G @ T_cur - orig_prod))
+        elif objective == "kld":
+            pred_probs = F.softmax(G @ T_cur, dim=1)
+            AB_err_loss = kld_loss(pred_probs, softmaxAB)
+        elif objective == "cosine":
+            GT = G @ T_cur
+            AB_err_loss = cosine_loss(GT, orig_prod, cosine_target)
+        else:
+            raise ValueError(f"unexpected objective {objective}")
+
         loss = (
             AB_err_loss +
             lamda * torch.sum(torch.square(T_cur - T_0))
@@ -1739,11 +1750,13 @@ def _learn_mithral_initialization(
 def learn_pluto(
     X, Q, ncodebooks, activation, output, bias, **kwargs,
 ):
+    objective = kwargs["objective"]
+    kwargs.pop("objective", None)
     Q = np.atleast_2d(Q)
 
     N, D = X.shape  # A
     M, DQ = Q.shape  # B^T
-    print(f"learn_pluto with N:{N} D:{D} M:{M} DQ:{DQ}")
+    print(f"learn_pluto with N:{N} D:{D} M:{M} DQ:{DQ} obj:{objective}")
     
     ncentroids_per_codebook = 16
     X_orig = X.astype(np.float32)
@@ -1770,7 +1783,7 @@ def learn_pluto(
     T_badshape = encoded_pluto(
         X_orig=X_orig, all_centroids=all_centroids,
         Y=X_res, X_enc=X_enc, B=Q.T, output=output, bias=bias,
-        activation=activation)
+        activation=activation, objective=objective)
     # shape: (n_codebooks*16, M)
     luts = T_badshape.T # (M, n_codebooks*16)
     luts = luts.reshape(M, ncodebooks, ncentroids_per_codebook)

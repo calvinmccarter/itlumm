@@ -78,14 +78,14 @@ if __name__ == "__main__":
     print(f"original MLPMixer {class_names} {values}")
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
-    idiot_input = []  # list for storing all activations
     max_collect_samples = 1024
-    algorithm = "mithral"
+    algorithm = "pluto"
     idiot_opts = {
         "max_collect_samples": max_collect_samples,
         "ncodebooks": None,
         "nonzeros_heuristic": "r2",
         "algorithm": algorithm,
+        "objective": "mse",
     }
 
     # XXX - only fc1 in MLPMixer.MLP has gelu
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     # PLUTO
     with torch.no_grad():
         for lname in idiot_ordering:
-            idiot_input = []
+            idiot_input = []  # list for storing all activations
             get_descendant(new_net, lname)._idiot_phase = "collect_input"
             get_descendant(new_net, lname)._idiot_input = idiot_input
             acc = 0.0

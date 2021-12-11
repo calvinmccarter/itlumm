@@ -334,10 +334,12 @@ class PlutoMatmul(VQMatmul):
         ncodebooks,
         activation=None,
         nonzeros_heuristic="pq",
+        objective="mse",
         lut_work_const=-1,
     ):
         self.activation = activation
         self.nonzeros_heuristic = nonzeros_heuristic
+        self.objective = objective
         self.lut_work_const = lut_work_const
         if (lut_work_const is not None) and (lut_work_const > 0) and (
                 lut_work_const > ncodebooks):
@@ -362,6 +364,7 @@ class PlutoMatmul(VQMatmul):
             ncodebooks=ncodebooks,
             activation=self.activation,
             nonzeros_heuristic=self.nonzeros_heuristic,
+            objective=self.objective,
             lut_work_const=self.lut_work_const,
         )
         return pluto_enc

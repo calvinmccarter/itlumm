@@ -697,6 +697,7 @@ class PlutoEncoder(MultiCodebookEncoder):
         ncodebooks,
         activation=None,
         nonzeros_heuristic='pq',
+        objective='mse',
         lut_work_const=-1,
     ):
         super().__init__(
@@ -711,6 +712,7 @@ class PlutoEncoder(MultiCodebookEncoder):
             accumulate_how='mean')
         self.activation = activation
         self.nonzeros_heuristic = nonzeros_heuristic
+        self.objective = objective
         self.lut_work_const = lut_work_const
 
     def name(self):
@@ -724,7 +726,8 @@ class PlutoEncoder(MultiCodebookEncoder):
         # Q = B.T, where A is (N, D) and B is (D, M). So Q is (M, D)
         self.splits_lists, self.centroids, luts = clusterize.learn_pluto(
             X, Q, self.ncodebooks, self.activation, output, bias, 
-            nonzeros_heuristic=self.nonzeros_heuristic, verbose=0)
+            nonzeros_heuristic=self.nonzeros_heuristic, objective=self.objective,
+            verbose=0)
         # self._learn_lut_quantization(X, Q)
 
         """
