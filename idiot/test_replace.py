@@ -78,7 +78,7 @@ if __name__ == "__main__":
     print(f"original MLPMixer {class_names} {values}")
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
-    max_collect_samples = 1024
+    max_collect_samples = 10240
     algorithm = "pluto"
     idiot_opts = {
         "max_collect_samples": max_collect_samples,
@@ -131,6 +131,7 @@ if __name__ == "__main__":
     )
 
     # PLUTO
+    """
     with torch.no_grad():
         for lname in idiot_ordering:
             idiot_input = []  # list for storing all activations
@@ -214,9 +215,9 @@ if __name__ == "__main__":
 
             # XXX - what about residual connections?
 
-            output = torch.softmax(new_net(image).squeeze(), dim = 0)
-            values, indices = torch.topk(output, k = 5)
-            class_names = [cifar10_classes[i] for i in indices.numpy().astype(int)]
-            values = values.detach().numpy()
-            print(f"after BBPluto {class_names} {values}")
-    """
+            # cannot do this because appends to idiot_output
+            #output = torch.softmax(new_net(image).squeeze(), dim = 0)
+            #values, indices = torch.topk(output, k = 5)
+            #class_names = [cifar10_classes[i] for i in indices.numpy().astype(int)]
+            #values = values.detach().numpy()
+            #print(f"after BBPluto {class_names} {values}")

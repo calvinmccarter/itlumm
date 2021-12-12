@@ -976,7 +976,8 @@ def encoded_pluto(
 
    
     if activation is None:
-        activation = identity
+        pass
+        #activation = identity
         # TODO: if activation is None, ignore bias since
         # bias does not affect sse_loss
     else:
@@ -1004,7 +1005,8 @@ def encoded_pluto(
     else:
         orig_prod_np = X_orig @ B
     
-    if output is None and objective == "mse-sklearn":
+    if objective == "mse-sklearn":
+        assert activation is None
         Y_np = orig_prod_np - G_np @ T_0_np
         est = linear_model.Ridge(fit_intercept=False, alpha=lamda)
         est.fit(G_np, Y_np)

@@ -90,6 +90,7 @@ class IdiotLinear(nn.Linear):
             max_len = self._idiot_opts["max_collect_samples"]
             if cur_len <= max_len:
                 self._idiot_input.append(input)
+            #rint(f"collect_input cur_len:{cur_len} {self._idiot_name}")
             return F.linear(input, self.weight, self.bias)
         elif self._idiot_phase == "collect_output":
             if self._idiot_output is None:
@@ -101,6 +102,7 @@ class IdiotLinear(nn.Linear):
             max_len = self._idiot_opts["max_collect_samples"]
             if cur_len <= max_len:
                 self._idiot_output.append(output - self.bias)
+            #rint(f"collect_output cur_len:{cur_len} {self._idiot_name}")
             return output
         elif self._idiot_phase == "noop":
             return F.linear(input, self.weight, self.bias)
@@ -131,7 +133,7 @@ class IdiotLinear(nn.Linear):
         #rint(self)
         #rint(f"input: {input.shape} -> {input_np.shape}")
         if output is not None:
-            rint(f"output: {output.shape if output is not None else None}")
+            print(f"output: {output.shape if output is not None else None}")
         #rint(f"weight: {self.weight.shape}   bias:{self.bias.shape}")
         if output is None:
             output_np = None
