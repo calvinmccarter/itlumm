@@ -10,9 +10,6 @@ from torch import Tensor
 
 import bolt.experiments.python.vq_amm as vq_amm
 
-# remove:
-import numpy as np
-import scipy.linalg as spla
 
 DEFAULT_IDIOT_OPTS = {
     "algorithm": "pluto",
@@ -216,9 +213,6 @@ def replace_linear(
         idiot_name=idiot_name,
         idiot_activation=idiot_activation,
     )
-    weight_np = mod.weight.data.numpy().astype(np.float64)
-    snorm = spla.interpolative.estimate_spectral_norm(weight_np)
-    print(f"spectralNorm {idiot_name} {snorm}")
     newmod.load_state_dict(
         deepcopy(mod.state_dict()), strict=False)
 
