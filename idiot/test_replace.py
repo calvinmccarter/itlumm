@@ -85,7 +85,7 @@ if __name__ == "__main__":
         "ncodebooks": None,
         "nonzeros_heuristic": "r2",
         "algorithm": algorithm,
-        "objective": "mse",
+        "objective": "mse-sklearn",
     }
 
     # XXX - only fc1 in MLPMixer.MLP has gelu

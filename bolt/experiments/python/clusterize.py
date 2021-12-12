@@ -946,7 +946,6 @@ def sse_loss(x, y):
 def encoded_pluto(
     X_orig,
     all_centroids,
-    Y,
     X_enc=None,
     X_bin=None,
     B=None,
@@ -999,20 +998,31 @@ def encoded_pluto(
     
     
     if output is not None:
-        orig_prod_np = output - bias.numpy()
+        # do not subtract bias
+        # because collect_output saves AB+bias - bias
+        orig_prod_np = output
     else:
         orig_prod_np = X_orig @ B
+    
+    if output is None and objective == "mse-sklearn":
+        Y_np = orig_prod_np - G_np @ T_0_np
+        est = linear_model.Ridge(fit_intercept=False, alpha=lamda)
+        est.fit(G_np, Y_np)
+        T_delta = est.coef_.T
+        T_star = T_0_np + T_delta
+        return T_star
 
-    X_orig_torch = torch.from_numpy(X_orig)
+
     orig_prod = torch.from_numpy(orig_prod_np)
-    orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
-    softmaxAB = torch.from_numpy(orig_prod_softmax_np)
+    if objective == "kld":
+        orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
+        softmaxAB = torch.from_numpy(orig_prod_softmax_np)
+        kld_loss = torch.nn.KLDivLoss(reduction='sum')
+    if objective == "cosine":
+        cosine_loss = torch.nn.CosineEmbeddingLoss(margin=0.5, reduce="sum")
+        cosine_target = torch.ones(X_orig.shape[0])
     #rint(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
-    kld_loss = torch.nn.KLDivLoss(reduction='sum')
-    cosine_loss = torch.nn.CosineEmbeddingLoss(margin=0.5, reduce="sum")
-    cosine_target = torch.ones(softmaxAB.shape[0])
     def pluto_obj(T_cur):
-        #AB_err_loss = kld_loss(pred_probs, softmaxAB)
         # TODO: implement bias and activation
         if objective == "mse":
             AB_err_loss = torch.sum(torch.square(G @ T_cur - orig_prod))
@@ -1782,7 +1792,7 @@ def learn_pluto(
 
     T_badshape = encoded_pluto(
         X_orig=X_orig, all_centroids=all_centroids,
-        Y=X_res, X_enc=X_enc, B=Q.T, output=output, bias=bias,
+        X_enc=X_enc, B=Q.T, output=output, bias=bias,
         activation=activation, objective=objective)
     # shape: (n_codebooks*16, M)
     luts = T_badshape.T # (M, n_codebooks*16)
