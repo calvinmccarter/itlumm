@@ -974,15 +974,6 @@ def encoded_pluto(
     if X_bin is None:
         X_bin = _densify_X_enc(X_enc, K=K)
 
-   
-    if activation is None:
-        pass
-        #activation = identity
-        # TODO: if activation is None, ignore bias since
-        # bias does not affect sse_loss
-    else:
-        raise NotImplementedError("nonlinear activation not impl yet")
-
     if bias is None:
         bias = torch.tensor(0.)
     else:
@@ -1014,11 +1005,16 @@ def encoded_pluto(
         T_star = T_0_np + T_delta
         return T_star
 
+    if activation is None:
+        activation = identity
+        # TODO: if activation is None, ignore bias since
+        # bias does not affect sse_loss
 
-    orig_prod = torch.from_numpy(orig_prod_np)
+
+    orig_prod = activation(torch.from_numpy(orig_prod_np))
     if objective == "kld":
         orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
-        softmaxAB = torch.from_numpy(orig_prod_softmax_np)
+        softmaxAB = activation(torch.from_numpy(orig_prod_softmax_np))
         kld_loss = torch.nn.KLDivLoss(reduction='sum')
     if objective == "cosine":
         cosine_loss = torch.nn.CosineEmbeddingLoss(margin=0.5, reduce="sum")
@@ -1027,12 +1023,12 @@ def encoded_pluto(
     def pluto_obj(T_cur):
         # TODO: implement bias and activation
         if objective == "mse":
-            AB_err_loss = torch.sum(torch.square(G @ T_cur - orig_prod))
+            AB_err_loss = torch.sum(torch.square(activation(G @ T_cur) - orig_prod))
         elif objective == "kld":
-            pred_probs = F.softmax(G @ T_cur, dim=1)
+            pred_probs = F.softmax(activation(G @ T_cur), dim=1)
             AB_err_loss = kld_loss(pred_probs, softmaxAB)
         elif objective == "cosine":
-            GT = G @ T_cur
+            GT = activation(G @ T_cur)
             AB_err_loss = cosine_loss(GT, orig_prod, cosine_target)
         else:
             raise ValueError(f"unexpected objective {objective}")
@@ -1758,7 +1754,7 @@ def _learn_mithral_initialization(
     return X_res, all_splits, all_centroids, all_buckets
 
 
-@_memory.cache
+#@_memory.cache
 def learn_pluto(
     X, Q, ncodebooks, activation, output, bias, **kwargs,
 ):

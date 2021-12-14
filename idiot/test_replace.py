@@ -10,6 +10,7 @@ from PIL import Image
 from torchvision import transforms
 
 from idiot.idiot import (
+    IdiotLinear,
     get_descendant,
     replace_descendants,
     set_all_descendant_attrs,
@@ -85,7 +86,8 @@ if __name__ == "__main__":
         "ncodebooks": None,
         "nonzeros_heuristic": "r2",
         "algorithm": algorithm,
-        "objective": "mse-sklearn",
+        "objective": "mse",
+        "accumulate_how": "mean",
     }
 
     # XXX - only fc1 in MLPMixer.MLP has gelu
@@ -122,6 +124,12 @@ if __name__ == "__main__":
     get_descendant(
         new_net, idiot_ordering[-1])._idiot_activation = f_softmax
     #print(new_net)
+    def set_activation_relu(mod):
+        if isinstance(mod, IdiotLinear):
+            if mod._idiot_name.endswith("fc1"):
+                mod._idiot_activation = F.relu
+    new_net.apply(set_activation_relu)
+
 
     test_loader = torch.utils.data.DataLoader(
         test_data,
@@ -131,7 +139,6 @@ if __name__ == "__main__":
     )
 
     # PLUTO
-    """
     with torch.no_grad():
         for lname in idiot_ordering:
             idiot_input = []  # list for storing all activations
@@ -221,3 +228,4 @@ if __name__ == "__main__":
             #class_names = [cifar10_classes[i] for i in indices.numpy().astype(int)]
             #values = values.detach().numpy()
             #print(f"after BBPluto {class_names} {values}")
+    """

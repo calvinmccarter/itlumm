@@ -698,6 +698,7 @@ class PlutoEncoder(MultiCodebookEncoder):
         activation=None,
         nonzeros_heuristic='pq',
         objective='mse',
+        accumulate_how='mean',
         lut_work_const=-1,
     ):
         super().__init__(
@@ -709,7 +710,7 @@ class PlutoEncoder(MultiCodebookEncoder):
             # quantize_lut=True, upcast_every=4,
             # quantize_lut=True, upcast_every=2,
             # quantize_lut=True, upcast_every=1,
-            accumulate_how='mean')
+            accumulate_how=accumulate_how)
         self.activation = activation
         self.nonzeros_heuristic = nonzeros_heuristic
         self.objective = objective

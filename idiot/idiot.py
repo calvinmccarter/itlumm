@@ -17,6 +17,7 @@ DEFAULT_IDIOT_OPTS = {
     "ncodebooks": None,
     "nonzeros_heuristic": "pq",
     "objective": "mse",
+    "accumulate_how": "mean",
 }
 
 class IdiotLinear(nn.Linear):
@@ -119,7 +120,6 @@ class IdiotLinear(nn.Linear):
         """
         ncodebooks = self._idiot_opts["ncodebooks"]
         algorithm = self._idiot_opts["algorithm"]
-        objective = self._idiot_opts["objective"]
         (n_out, n_in) = self.weight.data.shape
         if ncodebooks is None:
             ncodebooks = 2 ** math.floor(math.log2(n_in // 2))
@@ -149,8 +149,10 @@ class IdiotLinear(nn.Linear):
         if algorithm == "pluto":
             self._lut = vq_amm.PlutoMatmul(
                 ncodebooks=ncodebooks,
+                activation=self._idiot_activation,
                 nonzeros_heuristic=self._idiot_opts["nonzeros_heuristic"],
-                objective=objective,
+                objective=self._idiot_opts["objective"],
+                accumulate_how=self._idiot_opts["accumulate_how"],
             )
             self._lut.fit(
                 input_np,
