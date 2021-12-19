@@ -248,7 +248,14 @@ class MultiCodebookEncoder(abc.ABC):
                 dists = dists.sum(axis=-1)  # shape (N,)
             else:
                 dists = dists.reshape(dists.shape[0], -1, self.upcast_every)
-                if self.accumulate_how == 'sum':
+                if False:
+                    # setting acc_how=sum does really badly
+                    # setting quantize_lut = False improves by 1% vs acc_how=mean
+                    # also running this improves by 1% vs acc_how=mean
+                    # thus, we know that clipping in acc_how=sum is its problem.
+                    dists = dists.sum(2)
+                    dists = dists.sum(axis=-1)
+                elif self.accumulate_how == 'sum':
                     # sum upcast_every vals, then clip to mirror saturating
                     # unsigned addition, then sum without saturation (like u16)
                     dists = dists.sum(2)
