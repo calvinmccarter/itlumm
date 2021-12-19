@@ -122,7 +122,8 @@ class IdiotLinear(nn.Linear):
         algorithm = self._idiot_opts["algorithm"]
         (n_out, n_in) = self.weight.data.shape
         if ncodebooks is None:
-            ncodebooks = 2 ** math.floor(math.log2(n_in // 2))
+            ncodebook_factor = 2
+            ncodebooks = 2 ** math.floor(math.log2(n_in // ncodebook_factor))
             # XXX upcast_every assertion
             ncodebooks = min(ncodebooks, 256)
         print(f"fit_lut {algorithm} (in, out)={(n_in, n_out)}=>{ncodebooks}")

@@ -84,22 +84,18 @@ if __name__ == "__main__":
     idiot_opts = {
         "max_collect_samples": max_collect_samples,
         "ncodebooks": None,
-        "nonzeros_heuristic": "r2",
+        "nonzeros_heuristic": "opq",
         "algorithm": algorithm,
         "objective": "mse",
         "accumulate_how": "mean",
     }
-
-    # XXX - only fc1 in MLPMixer.MLP has gelu
-    # f_act = F.gelu
-    f_act = None
 
     new_net = replace_descendants(
         net,
         idiot_ordering,
         idiot_opts,
         "",
-        f_act,
+        None,
     )
     #print(new_net)
 
@@ -127,7 +123,7 @@ if __name__ == "__main__":
     def set_activation_relu(mod):
         if isinstance(mod, IdiotLinear):
             if mod._idiot_name.endswith("fc1"):
-                mod._idiot_activation = F.relu
+                mod._idiot_activation = F.gelu
     new_net.apply(set_activation_relu)
 
 
