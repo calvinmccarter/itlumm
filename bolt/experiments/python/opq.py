@@ -1,10 +1,50 @@
 import numpy as np
 
 from nanopq.pq import PQ, DistanceTable
-from procrustes.permutation import permutation
+from collections import defaultdict
 
 
-class PermutationOPQ(object):
+def balanced_partition(eigVals, M):
+    dim = eigVals.size
+    dim_subspace = dim / M
+    assert dim % M == 0  # pq start vs end not yet implemented
+    dim_tables = defaultdict(list)
+    fvals = np.log(eigVals + 1e-20)
+    fvals = fvals - np.min(fvals) + 1
+    sum_list = np.zeros(M)
+    big_number = 1e10 + np.sum(fvals)
+
+    cur_subidx = 0
+    for d in range(dim):
+        dim_tables[cur_subidx].append(d)
+        sum_list[cur_subidx] += fvals[d]
+        if len(dim_tables[cur_subidx]) == dim_subspace:
+            sum_list[cur_subidx] = big_number
+        cur_subidx = np.argmin(sum_list)
+
+    dim_ordered = []
+    for m in range(M):
+        dim_ordered.extend(dim_tables[m])
+    return dim_ordered
+
+
+def eigenvalue_allocation(X, M):
+    #X = X - np.mean(X, axis=0, keepdims=True)
+    dim = X.shape[1]
+    dim_pca = dim
+    covX = np.cov(X, rowvar=False)
+    w, v = np.linalg.eig(covX)
+    #rint(w)
+    sort_ix = np.argsort(np.abs(w))[::-1]
+    #rint(w[sort_ix])
+    eigVal = w[sort_ix]
+    eigVec = v[:,sort_ix]
+    dim_ordered = balanced_partition(eigVal, M)
+    R = eigVec[:, dim_ordered]
+    return R
+
+
+class OPQ(object):
     """Pure python implementation of Optimized Product Quantization (OPQ) [Ge14]_.
     OPQ is a simple extension of PQ.
     The best rotation matrix `R` is prepared using training vectors.
@@ -20,8 +60,9 @@ class PermutationOPQ(object):
         R (np.ndarray): Rotation matrix with the shape=(D, D) and dtype=np.float32
     """
 
-    def __init__(self, M, Ks=256, verbose=True):
+    def __init__(self, M, Ks=256, verbose=True, parametric_init=False):
         self.pq = PQ(M, Ks, verbose)
+        self.parametric_init = parametric_init 
         self.R = None
 
     def __eq__(self, other):
@@ -88,6 +129,8 @@ class PermutationOPQ(object):
         assert vecs.ndim == 2
         _, D = vecs.shape
         self.R = np.eye(D, dtype=np.float32)
+        if self.parametric_init:
+            self.R = eigenvalue_allocation(vecs, self.M).astype(np.float32).T
 
         for i in range(rotation_iter):
             if self.verbose:
@@ -105,9 +148,7 @@ class PermutationOPQ(object):
 
             # (b) Update a rotation matrix R
             X_ = pq_tmp.decode(pq_tmp.encode(X))
-            #U, s, V = np.linalg.svd(vecs.T @ X_)
-            print(f"vecs.T.shape:{vecs.T.shape} X_.shape:{X_.shape}")
-            res = permutation(vecs, X_)
+            U, s, V = np.linalg.svd(vecs.T @ X_)
             if self.verbose:
                 print(
                     "==== Reconstruction error:", np.linalg.norm(X - X_, "fro"), "===="
@@ -116,11 +157,7 @@ class PermutationOPQ(object):
                 self.pq = pq_tmp
                 break
             else:
-                #self.R = U @ V
-                print("heyyyyy!")
-                print(res)
-                print(res.t.dtype)
-                self.R = res.t.astype(np.float32)
+                self.R = U @ V
 
         return self
 
