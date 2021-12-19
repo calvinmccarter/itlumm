@@ -2,11 +2,15 @@ Cython
 fastcluster
 joblib
 jupyterlab
+metis
+nanopq
+networkx
 scikit-learn
 pandas
 pytest
 seaborn
 numba
+qc-procrustes
 torch
 torchvision
 zstandard

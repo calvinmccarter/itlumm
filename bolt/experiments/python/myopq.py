@@ -1,8 +1,11 @@
+import nanopq
 import numpy as np
 import numpy.linalg as npla
 import scipy.optimize as spop
 
 from collections import defaultdict
+
+from . import perm_opq
 
 def balanced_partition(eigVals, M):
     dim = eigVals.size
@@ -64,6 +67,21 @@ def eigenvalue_permutation(X, M):
 
 def opq_reordering(X, M):
     R = eigenvalue_allocation(X, M)
+    pqer = nanopq.OPQ(M=2, Ks=16, verbose=True)
+    #pqer = perm_opq.PermutationOPQ(M=2, Ks=16)
+    pqer.fit(X, rotation_iter=50)
+    print("eigenvalue allocation")
+    print(R)
+    print("pqer")
+    print(pqer.R)
+    R = pqer.R
     reord = R_to_reordering(R)
     return reord
+    
+def opq_ordering(X, M):
+    R = eigenvalue_allocation(X, M)
+    print(R)
+    row_ind, col_ind = spop.linear_sum_assignment(R, maximize=True)
+    print(col_ind)
+    return col_ind.astype(int).tolist()
     
