@@ -67,15 +67,8 @@ def eigenvalue_permutation(X, M):
     return R_to_P(R)
 
 def opq_reordering(X, M):
-    R = eigenvalue_allocation(X, M)
-    #pqer = nanopq.OPQ(M=2, Ks=16, verbose=True)
-    #pqer = opq.OPQ(M=2, Ks=16, verbose=True, parametric_init=False)
-    #pqer = perm_opq.PermutationOPQ(M=2, Ks=16)
+    pqer = nanopq.OPQ(M=2, Ks=16, verbose=False)
     pqer.fit(X, rotation_iter=100)
-    print("eigenvalue allocation")
-    print(R)
-    print("pqer")
-    print(pqer.R)
     R = pqer.R
     reord = R_to_reordering(R)
     return reord

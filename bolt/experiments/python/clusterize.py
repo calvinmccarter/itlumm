@@ -5,7 +5,9 @@ import numpy as np
 from functools import reduce
 
 import fastcluster
+import nanopq
 import numba
+import scipy.optimize as spop
 import torch
 import torch.nn.functional as F
 from sklearn.decomposition import PCA
@@ -13,6 +15,8 @@ from sklearn import linear_model
 from torchmin import minimize
 
 from . import subspaces as subs
+
+from . import myopq as myopq
 
 from joblib import Memory
 _memory = Memory('.', verbose=0)
@@ -396,6 +400,14 @@ class MultiSplit(object):
         if self.scaleby is not None:
             x = x * self.scaleby
         return x
+
+    def __repr__(self):
+        r = (
+            f"Multisplit(\n"
+            f"\tdim={self.dim}, scaleby={self.scaleby}, offset={self.offset},\n"
+            f"vals={self.vals.__repr__()}"
+        )
+        return r
 
 
 def learn_multisplits_orig(X, nsplits, log2_max_vals_per_split=4,
@@ -1660,17 +1672,25 @@ def linkage_to_ordering(Z):
         cache[n+k] = c1 + c2
     return cache[2*len(Z)]
 
-def group_X_cols(X):
+def group_X_cols_r2(X):
     noise = np.random.normal(loc=0, scale=0.01, size=X.shape)
     corrcoef = np.corrcoef(X + noise, rowvar=False)
     R2 = corrcoef ** 2
     Z = fastcluster.linkage((X+noise).T, method="average", metric="correlation")
     ix = linkage_to_ordering(Z)
     assert len(ix) == X.shape[1]
-    return ix
+    qq = np.zeros(X.shape[1], dtype=int)
+    qq[np.array(ix)] = np.arange(X.shape[1])
+    #return qq
+    return ix # XXX i don't know which is correct
+
+def group_X_cols_opq(X, ncodebooks):
+    X = X.astype(np.float32)
+    perm = myopq.opq_reordering(X, ncodebooks)
+    return perm
 
 
-@_memory.cache
+#@_memory.cache
 def _learn_mithral_initialization(
     X,
     ncodebooks,
@@ -1678,7 +1698,7 @@ def _learn_mithral_initialization(
     nonzeros_heuristic='pq',
     **kwargs,
 ):
-    heuristics = ('pq', 'pca', 'disjoint_pca', 'r2')
+    heuristics = ('pq', 'pca', 'disjoint_pca', 'r2', 'opq')
     assert nonzeros_heuristic in heuristics
     print(f'_learn_mithral_initialization heuristic {nonzeros_heuristic}')
 
@@ -1692,19 +1712,27 @@ def _learn_mithral_initialization(
     all_centroids = np.zeros(
         (ncodebooks, ncentroids_per_codebook, D), dtype=np.float32)
     all_splits = []
-    pq_idxs = _pq_codebook_start_end_idxs(X, ncodebooks, algo=pq_perm_algo)
+    # 'start' would mess up OPQ badly
+    pq_idxs = _pq_codebook_start_end_idxs(X, ncodebooks, algo='end')
     subvec_len = int(np.ceil(D / ncodebooks))  # for non-pq heuristics
 
-    if nonzeros_heuristic == 'r2':
-        reordered_ixs = group_X_cols(X)
-        r2_ixs = []
-        r2_ixs_set = set()
+    if nonzeros_heuristic in ('r2', 'opq'):
+        if nonzeros_heuristic == 'r2':
+            reordered_ixs = group_X_cols_r2(X)
+        elif nonzeros_heuristic == 'opq':
+            reordered_ixs = group_X_cols_opq(X, ncodebooks)
+        my_ixs = []
+        my_ixs_set = set()
+        #print(np.corrcoef(X, rowvar=False))
         for c in range(ncodebooks):
             start_idx, end_idx = pq_idxs[c]
             c_idxs = [reordered_ixs[ii] for ii in range(start_idx, end_idx)]
-            r2_ixs_set.update(c_idxs)
-            r2_ixs.append(np.array(c_idxs))
-        assert(r2_ixs_set == set(list(range(0, D))))
+            #print(c_idxs)
+            my_ixs_set.update(c_idxs)
+            my_ixs.append(np.array(c_idxs))
+        assert(my_ixs_set == set(list(range(0, D))))
+        print(f"nonzeros_heuristic {my_ixs}")
+        
 
 
     # ------------------------ 0th iteration; initialize all codebooks
@@ -1723,12 +1751,12 @@ def _learn_mithral_initialization(
                 use_X_res[:, idxs] = 0  # can't use same subspace
             v = subs.top_principal_component(use_X_res)
             idxs = np.argsort(np.abs(v))[:-subvec_len]
-        elif nonzeros_heuristic == 'r2':
-            idxs = r2_ixs[c]
+        elif nonzeros_heuristic in ('r2', 'opq'):
+            idxs = my_ixs[c]
 
         use_X_res = X_res[:, idxs]
         use_X_orig = X_orig[:, idxs]
-
+        #print(np.corrcoef(X_orig[:,idxs], rowvar=False))
         # learn codebook to soak current residuals
         multisplits, _, buckets = learn_multisplits(
             use_X_res, X_orig=use_X_orig,
