@@ -439,7 +439,7 @@ def main_all(methods=methods.USE_METHODS):
     main_cifar10(methods=methods)
     main_cifar100(methods=methods)
     #exit(0)
-    main_caltech(methods=methods)
+    #main_caltech(methods=methods)
     main_ucr(methods=methods)
 
 

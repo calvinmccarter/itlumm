@@ -903,6 +903,7 @@ def ucr_fig2(x_metric='Speedup', y_metric='Relative Accuracy',
     # df1 = res.ucr_amm(k=128)
     # df2 = res.ucr_amm(k=256)
     df = res.ucr_amm(k=128, problem=problem)
+    print(df)
     sb.set_context('poster')
     # fig, axes = plt.subplots(3, 1, figsize=(12, 13), sharex=True)
     fig, axes = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
@@ -1000,9 +1001,9 @@ def main():
     #lut_speed_fig()
     #fig1()
     ucr_fig2()
-    caltech_fig()
-    cifar_fig(y_metric='1 - NMSE')
-    cifar_fig(x_metric='ops')
+    #caltech_fig()
+    #cifar_fig(y_metric='1 - NMSE')
+    #cifar_fig(x_metric='ops')
 
 
 if __name__ == '__main__':
