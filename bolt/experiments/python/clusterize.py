@@ -185,7 +185,8 @@ def _cumsum_cols(X):
     return out
 
 
-@numba.njit(fastmath=True, cache=True)  # njit = no python, cache binary
+#@numba.njit(fastmath=True, cache=True)  # njit = no python, cache binary
+@numba.njit(fastmath=True)
 def _cumsse_cols(X):
     N, D = X.shape
     cumsses = np.empty((N, D), X.dtype)
@@ -1731,8 +1732,6 @@ def _learn_mithral_initialization(
             my_ixs_set.update(c_idxs)
             my_ixs.append(np.array(c_idxs))
         assert(my_ixs_set == set(list(range(0, D))))
-        print(f"nonzeros_heuristic {my_ixs}")
-        
 
 
     # ------------------------ 0th iteration; initialize all codebooks

@@ -85,6 +85,17 @@ def _hparams_for_method(method_id):
                 for const in lut_work_consts:
                     params.append({'ncodebooks': m, 'lut_work_const': const})
             return params
+        if method_id == methods.METHOD_PLUTO:
+            params = []
+            for m in mvals:
+                for nzh in ["pq", "r2", "opq"]:
+                    for obj in ["mse-sklearn","mse", "kld"]:
+                        params.append({
+                            'ncodebooks': m,
+                            'nonzeros_heuristic': nzh,
+                            'objective': obj,
+                        })
+            return params
 
         return [{'ncodebooks': m} for m in mvals]
     if method_id == methods.METHOD_EXACT:
@@ -282,9 +293,12 @@ def _get_all_independent_vars():
     independent_vars = set(['task_id', 'method', 'trial'])
     for method_id in methods.ALL_METHODS:
         hparams = _hparams_for_method(method_id)[0]
+        print(method_id)
+        print(hparams)
         est = _estimator_for_method_id(method_id, **hparams)
         independent_vars = (independent_vars |
                             set(est.get_params().keys()))
+        print(independent_vars)
     return independent_vars
 
 
@@ -309,6 +323,7 @@ def _main(tasks_func, methods=None, saveas=None, ntasks=None,
     if limit_ntasks is None or limit_ntasks < 1:
         limit_ntasks = np.inf
     independent_vars = _get_all_independent_vars()
+    print(independent_vars)
 
     for method_id in methods:
         if verbose > 0:
@@ -438,7 +453,7 @@ def main_all(methods=methods.USE_METHODS):
     #methods = ("Mithral", "Vingilote",)
     main_cifar10(methods=methods)
     main_cifar100(methods=methods)
-    #exit(0)
+    exit(0)
     #main_caltech(methods=methods)
     main_ucr(methods=methods)
 

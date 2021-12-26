@@ -373,8 +373,17 @@ class PlutoMatmul(VQMatmul):
         return pluto_enc
 
     def get_params(self):
+        activation_str = 'None'
+        if self.activation is not None:
+            if hasattr(self.activation, '__name__'):
+                activation_str = self.activation.__name__
+            else:
+                activation_str = str(self.activation)
         return {'ncodebooks': self.ncodebooks,
-                'lut_work_const': self.lut_work_const}
+                'lut_work_const': self.lut_work_const,
+                'activation': activation_str,
+                'nonzeros_heuristic': self.nonzeros_heuristic,
+                'objective': self.objective}
 
     def get_speed_metrics(self, A, B, fixedA=False, fixedB=False):
         N, D = A.shape
@@ -389,13 +398,13 @@ class PlutoMatmul(VQMatmul):
         nlookups = N * M * self.ncodebooks
         return {amm.KEY_NMULTIPLIES: nmuls, KEY_NLOOKUPS: nlookups}
 
-    def fit(self, A, B, output=None, bias=None):
+    def fit(self, A, B, Y=None, output=None, bias=None):
         """
 
         Args:
             A: left of shape (N, D)
             B: right of shape (D, M)
-            Y: desired A @ B if not None -- see ApproxMatmul
+            Y: desired A @ B if not None -- see ApproxMatmul -- ignored
             bias: shape broadcasts when adding A @ B + bias
         """
         # TODO use bias with nonlinearity
