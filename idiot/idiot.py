@@ -34,8 +34,6 @@ class IdiotLinear(nn.Linear):
         in_features,
         out_features,
         bias=True,
-        device=None,
-        dtype=None,
         idiot_ordering=None,
         idiot_opts=None,
         idiot_name=None,
@@ -45,8 +43,6 @@ class IdiotLinear(nn.Linear):
             in_features=in_features,
             out_features=out_features,
             bias=bias,
-            device=device,
-            dtype=dtype,
         )
 
         self._idiot_ordering = idiot_ordering  # external
