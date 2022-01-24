@@ -20,13 +20,14 @@ from timm.utils import NativeScaler, get_state_dict, ModelEma
 import sys
 sys.path.append('/home/calvin199/sandbox/deit-fork')
 from datasets import build_dataset
-from engine import train_one_epoch, evaluate
 from losses import DistillationLoss
 from samplers import RASampler
 import models
 import utils
 
 from resmlp_models import *
+
+from idiot.idiot_engine import train_one_epoch, evaluate, replace
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
@@ -189,7 +190,8 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train, args.nb_classes = build_dataset(is_train=True, args=args)
+    dataset_train, args.nb_classes = build_dataset(
+        is_train=True, args=args, is_resmlp_eval=True)
     dataset_val, _ = build_dataset(is_train=False, args=args)
 
     if True:  # args.distributed:
@@ -358,6 +360,8 @@ def main(args):
             model_without_ddp.load_state_dict(checkpoint['model'])
         except KeyError:
             model_without_ddp.load_state_dict(checkpoint)
+            print(model_without_ddp)
+            exit(0)
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
