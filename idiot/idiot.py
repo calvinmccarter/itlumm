@@ -90,6 +90,7 @@ class IdiotLinear(nn.Linear):
             #rint(f"collect_input cur_len:{cur_len} {self._idiot_name}")
             return F.linear(input, self.weight, self.bias)
         elif self._idiot_phase == "collect_output":
+            # only used in BBPLUTO
             if self._idiot_output is None:
                 raise ValueError("needs _idiot_output for collect_output")
             output = F.linear(input, self.weight, self.bias)
