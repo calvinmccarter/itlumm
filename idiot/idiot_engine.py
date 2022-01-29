@@ -147,3 +147,82 @@ def evaluate(data_loader, model, device):
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
+
+@torch.no_grad()
+def replace(data_loader, net, device):
+    net.eval()
+
+    idiot_ordering = []  # ordered list of IdiotLinear layers
+    max_collect_samples = 10240
+    algorithm = "pluto"
+    idiot_opts = {
+        "max_collect_samples": max_collect_samples,
+        "ncodebooks": -2,
+        "nonzeros_heuristic": "r2",
+        "algorithm": algorithm,
+        "objective": "mse",
+        "accumulate_how": "mean",
+    }
+
+    new_net = replace_descendants(
+        net,
+        idiot_ordering,
+        idiot_opts,
+        "",
+        None,
+    )
+    new_net.eval()
+
+    set_all_descendant_attrs(new_net, "_idiot_phase", "find_ordering")
+    for data, label in test_loader:
+        output = new_net(data) # mutates idiot_ordering
+        break
+    set_all_descendant_attrs(new_net, "_idiot_phase", "noop")
+
+    def f_softmax(x):
+        return torch.softmax(x, dim=1)
+    get_descendant(
+        new_net, idiot_ordering[-1])._idiot_activation = f_softmax
+    def set_activation_gelu(mod):
+        if isinstance(mod, IdiotLinear):
+            if mod._idiot_name.endswith("fc1"):
+                print(mod._idiot_name)
+                mod._idiot_activation = F.gelu
+    new_net.apply(set_activation_gelu)
+    exit(0)
+
+    # PLUTO
+    for lname in idiot_ordering:
+        acc = 0.0
+        for data, label in test_loader:
+            output = new_net(data)
+            acc += (output.argmax(dim=1) == label).float().mean()
+        acc = acc / len(test_loader)
+        print(f"idiot-{algorithm}: before replacing {lname}: acc={acc}")
+
+        idiot_input = []  # list for storing all activations
+        get_descendant(new_net, lname)._idiot_phase = "collect_input"
+        get_descendant(new_net, lname)._idiot_input = idiot_input
+        for bix, (data, label) in enumerate(train_loader):
+            # Modifies idiot_input
+            idiot_input_len = len(idiot_input)
+            output = new_net(data)
+            if len(idiot_input) == idiot_input_len:
+                break
+
+        idiot_input_concat = torch.cat(idiot_input, dim=0)
+        get_descendant(new_net, lname).fit_lut(idiot_input_concat, None)
+        get_descendant(new_net, lname)._idiot_phase = "apply_lut"
+
+    acc = 0.0
+    for data, label in test_loader:
+        # Modifies idiot_input
+        output = new_net(data)
+        acc += (output.argmax(dim=1) == label).float().mean()
+    acc = acc / len(test_loader)
+    print(f"idiot-{algorithm}: final {max_collect_samples}: acc={acc}")
+
+    return model
+
+

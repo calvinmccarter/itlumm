@@ -123,6 +123,12 @@ class IdiotLinear(nn.Linear):
             ncodebooks = 2 ** math.floor(math.log2(n_in // ncodebook_factor))
             # XXX upcast_every assertion
             ncodebooks = min(ncodebooks, 256)
+        elif ncodebooks <= -1:
+            ncodebook_factor = abs(ncodebooks)
+            ncodebooks = 2 ** math.floor(math.log2(n_in // ncodebook_factor))
+            # XXX upcast_every assertion
+            ncodebooks = min(ncodebooks, 256)
+
         print(f"fit_lut {algorithm} (in, out)={(n_in, n_out)}=>{ncodebooks}")
 
         # Reshape input and output to be 2d matrices, not tensors

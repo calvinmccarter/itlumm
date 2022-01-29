@@ -75,8 +75,8 @@ if __name__ == "__main__":
     algorithm = "pluto"
     idiot_opts = {
         "max_collect_samples": max_collect_samples,
-        "ncodebooks": None,
-        "nonzeros_heuristic": "opq",
+        "ncodebooks": -2,
+        "nonzeros_heuristic": "r2",
         "algorithm": algorithm,
         "objective": "mse",
         "accumulate_how": "mean",
