@@ -308,8 +308,6 @@ def main(args):
             model_without_ddp.load_state_dict(checkpoint['model'])
         except KeyError:
             model_without_ddp.load_state_dict(checkpoint)
-            print(model_without_ddp)
-            exit(0)
         if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
             optimizer.load_state_dict(checkpoint['optimizer'])
             lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])

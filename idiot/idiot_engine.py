@@ -72,51 +72,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
 
 @torch.no_grad()
-def replace(data_loader, model, device):
-    criterion = torch.nn.CrossEntropyLoss()
-
-    metric_logger = utils.MetricLogger(delimiter="  ")
-    header = 'Replace:'
-
-    # switch to evaluation mode
-    model.eval()
-
-    idiot_ordering = []  # ordered list of IdiotLinear layers
-    max_collect_samples = 10240
-    algorithm = "pluto"
-    idiot_opts = {
-        "max_collect_samples": max_collect_samples,
-        "ncodebooks": None,
-        "nonzeros_heuristic": "opq",
-        "algorithm": algorithm,
-        "objective": "mse",
-        "accumulate_how": "mean",
-    }
-
-
-    for images, target in metric_logger.log_every(data_loader, 10, header):
-        images = images.to(device, non_blocking=True)
-        target = target.to(device, non_blocking=True)
-
-        # compute output
-        with torch.cuda.amp.autocast(enabled=False):
-            output = model(images)
-            loss = criterion(output, target)
-
-        acc1, acc5 = accuracy(output, target, topk=(1, 5))
-
-        batch_size = images.shape[0]
-        metric_logger.update(loss=loss.item())
-        metric_logger.meters['acc1'].update(acc1.item(), n=batch_size)
-        metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
-    # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
-    print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
-          .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
-
-    return model
-
-@torch.no_grad()
 def evaluate(data_loader, model, device):
     criterion = torch.nn.CrossEntropyLoss()
 
@@ -154,7 +109,7 @@ def replace(data_loader, net, device):
     net.eval()
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
-    max_collect_samples = 10240
+    max_collect_samples = 10000
     algorithm = "pluto"
     idiot_opts = {
         "max_collect_samples": max_collect_samples,
@@ -173,6 +128,7 @@ def replace(data_loader, net, device):
         None,
     )
     new_net.eval()
+    print(new_net)
 
     set_all_descendant_attrs(new_net, "_idiot_phase", "find_ordering")
     for data, label in test_loader:
@@ -190,7 +146,6 @@ def replace(data_loader, net, device):
                 print(mod._idiot_name)
                 mod._idiot_activation = F.gelu
     new_net.apply(set_activation_gelu)
-    exit(0)
 
     # PLUTO
     for lname in idiot_ordering:
@@ -224,5 +179,3 @@ def replace(data_loader, net, device):
     print(f"idiot-{algorithm}: final {max_collect_samples}: acc={acc}")
 
     return model
-
-
