@@ -1003,6 +1003,7 @@ def encoded_pluto(
     
     
     if output is not None:
+        assert False # TODO- reimplement BB-PLUTO
         # do not subtract bias
         # because collect_output saves AB+bias - bias
         orig_prod_np = output
@@ -1034,10 +1035,10 @@ def encoded_pluto(
         cosine_target = torch.ones(X_orig.shape[0])
     #rint(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
     def pluto_obj(T_cur):
-        # TODO: implement bias and activation
         if objective == "mse":
             AB_err_loss = torch.sum(torch.square(activation(G @ T_cur) - orig_prod))
         elif objective == "kld":
+            # TODO: implement bias and activation
             pred_probs = F.softmax(activation(G @ T_cur), dim=1)
             AB_err_loss = kld_loss(pred_probs, softmaxAB)
         elif objective == "cosine":
