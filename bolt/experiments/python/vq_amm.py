@@ -417,18 +417,23 @@ class PlutoMatmul(VQMatmul):
         # self.enc.fit also calls clusterize.learn_pluto
         self.luts, self.offset, self.scale = self.enc.fit(
             A, B.T, output=output, bias=bias)
-        self.B = B
+        self.stddevB0 = np.std(B, axis=0)
+        self.stddevB1 = np.std(B, axis=1)
 
     def set_B(self, B):
         # TODO: use stddev and shape to verify with less memory
-        assert np.array_equal(self.B, B)
+        assert np.array_equal(self.stddevB0, np.stddev(B, axis=0))
+        assert np.array_equal(self.stddevB1, np.stddev(B, axis=1))
 
     def __call__(self, A, B):
         if self.A_enc is None:
             # sets self.A_enc, uses self.enc.splits_lists and self.enc.offsets
             self.A_enc = self.enc.encode_X(A)
 
-        if not np.array_equal(self.B, B):
+        if not np.array_equal(self.stddevB0, np.std(B, axis=0)):
+            # TODO: use stddev and shape to verify with less memory
+            raise ValueError("Pluto luts cannot be transferred to new B.")
+        if not np.array_equal(self.stddevB1, np.std(B, axis=1)):
             # TODO: use stddev and shape to verify with less memory
             raise ValueError("Pluto luts cannot be transferred to new B.")
 
