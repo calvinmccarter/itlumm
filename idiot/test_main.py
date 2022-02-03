@@ -260,7 +260,12 @@ def main(args):
 
     model_ema = None
     if args.model_ema:
-        raise ValueError("model_ema not expected")
+        # Important to create EMA model after cuda(), DP wrapper, and AMP but before SyncBN and DDP wrapper
+        model_ema = ModelEma(
+            model,
+            decay=args.model_ema_decay,
+            device='cpu' if args.model_ema_force_cpu else '',
+            resume='')
 
     model_without_ddp = model
     if args.distributed:
@@ -301,6 +306,7 @@ def main(args):
         if args.resume.startswith('https'):
             checkpoint = torch.hub.load_state_dict_from_url(
                 args.resume, map_location='cpu', check_hash=True)
+            print("printing checkpoint keys")
             print(checkpoint.keys())
         else:
             checkpoint = torch.load(args.resume, map_location='cpu')
@@ -323,8 +329,7 @@ def main(args):
 
     test_stats = evaluate(data_loader_val, model, device)
     print(f"Accuracy of the network on the {len(dataset_val)} test images: {test_stats['acc1']:.1f}%")
-        return
-
+    return
 
 
 if __name__ == '__main__':

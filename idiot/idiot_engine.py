@@ -8,6 +8,7 @@ import sys
 from typing import Iterable, Optional
 
 import torch
+import torch.nn.functional as F
 
 from timm.data import Mixup
 from timm.utils import accuracy, ModelEma
@@ -109,11 +110,11 @@ def replace(data_loader, net, device):
     net.eval()
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
-    max_collect_samples = 10000
+    max_collect_samples = 1000
     algorithm = "pluto"
     idiot_opts = {
         "max_collect_samples": max_collect_samples,
-        "ncodebooks": -2,
+        "ncodebooks": -4,
         "nonzeros_heuristic": "r2",
         "algorithm": algorithm,
         "objective": "mse",
@@ -128,13 +129,14 @@ def replace(data_loader, net, device):
         None,
     )
     new_net.eval()
-    print(new_net)
 
     set_all_descendant_attrs(new_net, "_idiot_phase", "find_ordering")
-    for data, label in test_loader:
+    for data, label in data_loader:
         output = new_net(data) # mutates idiot_ordering
         break
     set_all_descendant_attrs(new_net, "_idiot_phase", "noop")
+    print(idiot_ordering)
+    print(new_net)
 
     def f_softmax(x):
         return torch.softmax(x, dim=1)
@@ -148,18 +150,12 @@ def replace(data_loader, net, device):
     new_net.apply(set_activation_gelu)
 
     # PLUTO
-    for lname in idiot_ordering:
-        acc = 0.0
-        for data, label in test_loader:
-            output = new_net(data)
-            acc += (output.argmax(dim=1) == label).float().mean()
-        acc = acc / len(test_loader)
-        print(f"idiot-{algorithm}: before replacing {lname}: acc={acc}")
-
+    for lname in idiot_ordering[1:3]:
+        print(f"replacing {lname}")
         idiot_input = []  # list for storing all activations
         get_descendant(new_net, lname)._idiot_phase = "collect_input"
         get_descendant(new_net, lname)._idiot_input = idiot_input
-        for bix, (data, label) in enumerate(train_loader):
+        for bix, (data, label) in enumerate(data_loader):
             # Modifies idiot_input
             idiot_input_len = len(idiot_input)
             output = new_net(data)
@@ -170,12 +166,4 @@ def replace(data_loader, net, device):
         get_descendant(new_net, lname).fit_lut(idiot_input_concat, None)
         get_descendant(new_net, lname)._idiot_phase = "apply_lut"
 
-    acc = 0.0
-    for data, label in test_loader:
-        # Modifies idiot_input
-        output = new_net(data)
-        acc += (output.argmax(dim=1) == label).float().mean()
-    acc = acc / len(test_loader)
-    print(f"idiot-{algorithm}: final {max_collect_samples}: acc={acc}")
-
-    return model
+    return new_net
