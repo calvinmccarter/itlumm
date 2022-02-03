@@ -647,7 +647,7 @@ def learn_multisplits_orig(X, nsplits, log2_max_vals_per_split=4,
     return splits, loss
 
 
-@_memory.cache
+#@_memory.cache
 def learn_multisplits(
         X, nsplits=4, return_centroids=True, return_buckets=False,
         # learn_quantize_params=False,
@@ -1844,7 +1844,7 @@ def learn_pluto(
     return all_splits, all_centroids, luts
 
 
-@_memory.cache
+#@_memory.cache
 def learn_vingilote(
     X, Q, ncodebooks, return_buckets=False, **kwargs,
 ):
@@ -1895,7 +1895,7 @@ def learn_vingilote(
     return all_splits, all_centroids
 
 
-@_memory.cache
+#@_memory.cache
 def learn_mithral(X, ncodebooks, return_buckets=False,
                   lut_work_const=-1, **kwargs):
     N, D = X.shape
@@ -2453,7 +2453,7 @@ def centroids_from_splits(X, splits):
     return _centroids_from_assignments(X, assignments, ncentroids=ncentroids)
 
 
-@_memory.cache
+#@_memory.cache
 def learn_splits_in_subspaces(X, subvect_len, nsplits_per_subs,
                               return_centroids=True, algo='multisplits',
                               verbose=2):
