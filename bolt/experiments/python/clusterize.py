@@ -987,6 +987,9 @@ def encoded_pluto(
     if X_bin is None:
         X_bin = _densify_X_enc(X_enc, K=K)
 
+    if objective not in ("mse", "kld", "cosine"):
+        raise ValueError(f"unexpected objective {objective}")
+
     if bias is None:
         bias = torch.tensor(0.)
     else:
@@ -1003,11 +1006,13 @@ def encoded_pluto(
     
     
     if output is not None:
+        assert False # TODO- reimplement BB-PLUTO
         # do not subtract bias
         # because collect_output saves AB+bias - bias
         orig_prod_np = output
     else:
         orig_prod_np = X_orig @ B
+        orig_prod = torch.from_numpy(orig_prod_np)
     
     if objective == "mse-sklearn":
         assert activation is None
@@ -1020,31 +1025,23 @@ def encoded_pluto(
 
     if activation is None:
         activation = identity
-        # TODO: if activation is None, ignore bias since
-        # bias does not affect sse_loss
 
-
-    orig_prod = activation(torch.from_numpy(orig_prod_np))
+    with torch.no_grad():
+        orig_act = activation(orig_prod + bias)
     if objective == "kld":
-        orig_prod_softmax_np = F.softmax(orig_prod, dim=1).numpy()
-        softmaxAB = activation(torch.from_numpy(orig_prod_softmax_np))
         kld_loss = torch.nn.KLDivLoss(reduction='sum')
     if objective == "cosine":
         cosine_loss = torch.nn.CosineEmbeddingLoss(margin=0.5, reduce="sum")
         cosine_target = torch.ones(X_orig.shape[0])
     #rint(f"encoded_pluto A:{X_orig.shape} B:{B.shape} G:{G.shape} P:{P_0.shape} B:{B.shape}")
     def pluto_obj(T_cur):
-        # TODO: implement bias and activation
+        pred_act = activation(G @ T_cur + bias)
         if objective == "mse":
-            AB_err_loss = torch.sum(torch.square(activation(G @ T_cur) - orig_prod))
+            AB_err_loss = torch.sum(torch.square(pred_act - orig_act))
         elif objective == "kld":
-            pred_probs = F.softmax(activation(G @ T_cur), dim=1)
-            AB_err_loss = kld_loss(pred_probs, softmaxAB)
+            AB_err_loss = kld_loss(pred_act, orig_act)
         elif objective == "cosine":
-            GT = activation(G @ T_cur)
-            AB_err_loss = cosine_loss(GT, orig_prod, cosine_target)
-        else:
-            raise ValueError(f"unexpected objective {objective}")
+            AB_err_loss = cosine_loss(pred_act, orig_act, cosine_target)
 
         loss = (
             AB_err_loss +

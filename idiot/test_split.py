@@ -76,7 +76,7 @@ if __name__ == "__main__":
     idiot_opts = {
         "max_collect_samples": max_collect_samples,
         "ncodebooks": -2,
-        "nonzeros_heuristic": "r2",
+        "nonzeros_heuristic": "pq",
         "algorithm": algorithm,
         "objective": "mse",
         "accumulate_how": "mean",
@@ -101,6 +101,10 @@ if __name__ == "__main__":
         return torch.softmax(x, dim=1)
     get_descendant(
         new_net, idiot_ordering[-1])._idiot_activation = f_softmax
+    get_descendant(
+        new_net, idiot_ordering[-1])._idiot_opts["objective"] = "kld"
+
+
     def set_activation_gelu(mod):
         if isinstance(mod, IdiotLinear):
             if mod._idiot_name.endswith("fc1"):
