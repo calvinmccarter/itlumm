@@ -13,8 +13,8 @@ import torch.nn.functional as F
 from timm.data import Mixup
 from timm.utils import accuracy, ModelEma
 
-from losses import DistillationLoss
-import utils
+from idiot.losses import DistillationLoss
+import idiot.utils
 
 from idiot.idiot import (
     IdiotLinear,
@@ -106,7 +106,7 @@ def evaluate(data_loader, model, device):
 
 
 @torch.no_grad()
-def replace(data_loader, net, device):
+def replace(data_loader, net, device, **idiot_opt_kwargs):
     net.eval()
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
@@ -120,6 +120,7 @@ def replace(data_loader, net, device):
         "objective": "mse",
         "accumulate_how": "mean",
     }
+    idiot_opts.update(**idiot_opt_kwargs)
 
     new_net = replace_descendants(
         net,
