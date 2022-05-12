@@ -31,8 +31,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
                     set_training_mode=True):
     model.train(set_training_mode)
-    metric_logger = utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger = idiot.utils.MetricLogger(delimiter="  ")
+    metric_logger.add_meter('lr', idiot.utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
@@ -76,7 +76,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 def evaluate(data_loader, model, device):
     criterion = torch.nn.CrossEntropyLoss()
 
-    metric_logger = utils.MetricLogger(delimiter="  ")
+    metric_logger = idiot.utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
     # switch to evaluation mode
@@ -106,7 +106,7 @@ def evaluate(data_loader, model, device):
 
 
 @torch.no_grad()
-def replace(data_loader, net, device, **idiot_opt_kwargs):
+def replace(data_loader, net, device, layer_indices=None, **idiot_opt_kwargs):
     net.eval()
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
@@ -150,9 +150,14 @@ def replace(data_loader, net, device, **idiot_opt_kwargs):
                 mod._idiot_activation = F.gelu
     new_net.apply(set_activation_gelu)
 
+    if layer_indices is None:
+        layer_indices = set(range(len(idiot_ordering)))
+
     # PLUTO
-    for lname in idiot_ordering[1:3]:
-        print(f"replacing {lname}")
+    for i, lname in enumerate(idiot_ordering):
+        if i not in layer_indices:
+            continue
+        print(f"replacing {i}-th layer {lname}")
         idiot_input = []  # list for storing all activations
         get_descendant(new_net, lname)._idiot_phase = "collect_input"
         get_descendant(new_net, lname)._idiot_input = idiot_input
