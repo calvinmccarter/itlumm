@@ -106,7 +106,14 @@ def evaluate(data_loader, model, device):
 
 
 @torch.no_grad()
-def replace(data_loader, net, device, layer_indices=None, **idiot_opt_kwargs):
+def replace(
+    data_loader,
+    net,
+    device,
+    layer_indices=None,
+    force_softmax_and_kld_on_output_layer=True,
+    **idiot_opt_kwargs
+):
     net.eval()
 
     idiot_ordering = []  # ordered list of IdiotLinear layers
@@ -139,16 +146,16 @@ def replace(data_loader, net, device, layer_indices=None, **idiot_opt_kwargs):
     print(idiot_ordering)
     print(new_net)
 
-    def f_softmax(x):
-        return torch.softmax(x, dim=1)
-    get_descendant(
-        new_net, idiot_ordering[-1])._idiot_activation = f_softmax
-    def set_activation_gelu(mod):
-        if isinstance(mod, IdiotLinear):
-            if mod._idiot_name.endswith("fc1"):
-                print(mod._idiot_name)
-                mod._idiot_activation = F.gelu
-    new_net.apply(set_activation_gelu)
+    if force_softmax_and_kld_on_output_layer:
+        # Process the last layer's output with softmax and fit the lookup table
+        # using the softmax output. Force the objective to be kld for the last
+        # layer. This hard-coded configuration is OK for simple classifier
+        # networks that we're considering now.
+        def f_softmax(x):
+            return torch.softmax(x, dim=1)
+        output_layer = get_descendant(new_net, idiot_ordering[-1])
+        output_layer._idiot_activation = f_softmax
+        output_layer._idiot_opts["objective"] = "kld"
 
     if layer_indices is None:
         layer_indices = set(range(len(idiot_ordering)))
