@@ -129,6 +129,8 @@ class IdiotLinear(nn.Linear):
             # XXX upcast_every assertion
             ncodebooks = min(ncodebooks, 256)
 
+        self._idiot_opts["actual_ncodebooks"] = ncodebooks
+
         print(f"fit_lut {algorithm} (in, out)={(n_in, n_out)}=>{ncodebooks}")
 
         # Reshape input and output to be 2d matrices, not tensors
