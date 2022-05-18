@@ -182,18 +182,29 @@ def main():
     def get_actual_ncodebooks(model):
         for module in model.modules():
             if isinstance(module, torch.nn.Linear):
-                yield module._idiot_opts['actual_ncodebooks']
+                try:
+                    yield module._idiot_opts['actual_ncodebooks']
+                except KeyError:
+                    yield "n/a"
 
     if args.eval_with_lut:
         from itertools import product
         max_collect_samples = [1000]
-        ncodebooks = [-1, -2, -3, -4]
-        objectives = ["mse", "cosine"]
+        ncodebooks = [-1, -2, -3, -4, -8, -16]
+        objectives = ["mse"]
+
+        n_linear = 0
+        for module in model.modules():
+            if isinstance(module, torch.nn.Linear):
+                n_linear += 1
+        linear_layer_indices = range(n_linear)
+
         
         params = product(
             max_collect_samples,
             ncodebooks,
-            objectives
+            objectives,
+            linear_layer_indices
         )
 
         results = []
@@ -203,28 +214,31 @@ def main():
         print("before replacing")
         print(model)
         loss, num_correct, n, accuracy = test(model, device, test_loader)
-        actual_ncodebooks = [torch.inf 
+        actual_ncodebooks = ["n/a"
             for _ in model.modules() if isinstance(_, torch.nn.Linear)
         ]
         results.append((
-            [torch.inf for _ in actual_ncodebooks],
             actual_ncodebooks,
-            torch.inf,
-            "no objective",
-            loss, accuracy
+            actual_ncodebooks,
+            "N/A",
+            "N/A",
+            "N/A",
+            loss,
+            accuracy
         ))
 
-        for mcs, ncb, obj in params:
+        for mcs, ncb, obj, linear_layer_index in params:
             model = replace(
                 train_loader,
                 model,
                 device,
+                layer_indices=[linear_layer_index],
                 ncodebooks=ncb,
                 max_collect_samples=mcs,
                 objective=obj,
                 force_softmax_and_kld_on_output_layer=True
             )
-            print("after replacing")
+            print(f"after replacing linear layer {linear_layer_index}")
             print(model)
             loss, num_correct, n, accuracy = test(model, device, test_loader)
             actual_ncodebooks = list(get_actual_ncodebooks(model))
@@ -233,6 +247,7 @@ def main():
                 actual_ncodebooks,
                 mcs,
                 obj,
+                linear_layer_index,
                 loss,
                 accuracy
             ))
@@ -249,6 +264,7 @@ def main():
             "actual_ncodebooks",
             "max_collect_samples",
             "objective",
+            "linear_layer_index",
             "loss",
             "accuracy"
         ]
