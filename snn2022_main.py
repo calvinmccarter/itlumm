@@ -2,6 +2,8 @@ from __future__ import print_function
 import argparse
 import warnings
 import os
+import functools
+from collections import defaultdict
 
 
 import torch
@@ -14,7 +16,7 @@ from torchvision import datasets, transforms
 import pandas as pd
 
 
-from idiot.idiot_engine import train_one_epoch, evaluate, replace
+from idiot.idiot_engine import replace
 
 
 class Net(nn.Module):
@@ -113,6 +115,15 @@ def main():
         '--eval-with-lut', action='store_true',
         help='Evaluate with lookup tables'
     )
+
+    parser.add_argument(
+        '--record-and-save-layer-outputs', action='store_true',
+        help=(
+            "Record outputs of each Linear layer of original model. "
+            "This argument only has an effect with --eval-with-lut. "
+            "Outputs are saved to files layer-outputs-DATASET-LAYER_NAME.pt."
+        )
+    )
     parser.add_argument('--batch-size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
@@ -172,7 +183,7 @@ def main():
         '../data', train=False, transform=transform
     )
 
-    train_loader = torch.utils.data.DataLoader(train_dataset,**train_kwargs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, **train_kwargs)
     test_loader = torch.utils.data.DataLoader(test_dataset, **test_kwargs)
 
     model = Net(args.dataset).to(device)
@@ -189,8 +200,31 @@ def main():
 
     if args.eval_with_lut:
         from itertools import product
-        max_collect_samples = [1000]
-        ncodebooks = [-1, -2, -3, -4, -8, -16]
+
+        def get_layer_outputs(module, inputs, outputs, accumulator=None):
+            """Save outputs of a layer to a list.
+            """
+            accumulator.append(outputs)
+
+        def register_layer_output_hooks():
+            """Register hooks to accumulate outputs of layers.
+            """
+            accumulators = defaultdict(list)
+            handles = {}
+            for module_name, module in model.named_modules():
+                if isinstance(module, torch.nn.Linear):
+                    handles[module_name] = module.register_forward_hook(
+                        functools.partial(
+                            get_layer_outputs,
+                            accumulator=accumulators[module_name]
+                        )
+                    )
+            return accumulators, handles
+
+
+        max_collect_samples = [300]
+        #ncodebooks = [-1, -2, -3, -4, -8, -16]
+        ncodebooks = [-2, -4, -8, -16]
         objectives = ["mse"]
 
         n_linear = 0
@@ -198,7 +232,6 @@ def main():
             if isinstance(module, torch.nn.Linear):
                 n_linear += 1
         linear_layer_indices = range(n_linear)
-
         
         params = product(
             max_collect_samples,
@@ -213,7 +246,29 @@ def main():
         model.load_state_dict(state_dict)
         print("before replacing")
         print(model)
+
+        if args.record_and_save_layer_outputs:
+            accumulators, handles = register_layer_output_hooks()
+
         loss, num_correct, n, accuracy = test(model, device, test_loader)
+
+        def save_layer_outputs(accumulators):
+            """Save lists of tensors in dictionary to a file.
+            """
+            for module_name in accumulators.keys():
+                layer_outputs_list = accumulators[module_name]
+                layer_outputs = torch.cat(layer_outputs_list, dim=0)
+                torch.save(
+                    layer_outputs,
+                    f"layer-outputs-{args.dataset}-{module_name}.pt"
+                )
+
+        if args.record_and_save_layer_outputs:
+            for handle in handles.values():
+                handle.remove()
+
+            save_layer_outputs(accumulators)
+
         actual_ncodebooks = ["n/a"
             for _ in model.modules() if isinstance(_, torch.nn.Linear)
         ]
@@ -228,6 +283,9 @@ def main():
         ))
 
         for mcs, ncb, obj, linear_layer_index in params:
+            # Reload model before each replacement.
+            model = Net(args.dataset).to(device)
+            model.load_state_dict(state_dict)
             model = replace(
                 train_loader,
                 model,
@@ -252,9 +310,6 @@ def main():
                 accuracy
             ))
 
-            # Reload model after replacement.
-            model = Net(args.dataset).to(device)
-            model.load_state_dict(state_dict)
 
         for res in results:
             print(res)
@@ -269,8 +324,13 @@ def main():
             "accuracy"
         ]
 
-        df = pd.DataFrame(data=results, columns=columns)
-        df.to_csv("results.csv", index=False)
+        def save_data_frame():
+            df = pd.DataFrame(data=results, columns=columns)
+            df.to_csv("results.csv", index=False)
+
+
+        save_data_frame()
+
 
         return
 
