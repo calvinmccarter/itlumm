@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import OneCycleLR
 
 from torchvision import datasets, transforms
 import pandas as pd
@@ -30,7 +30,7 @@ class Net(nn.Module):
         elif dataset.lower() == 'cifar10':
             input_dim = 3072
             hidden_dim = 2000
-            n_hidden = 6
+            n_hidden = 8
         else:
             raise ValueError(f"Invalid dataset {dataset}")
 
@@ -63,7 +63,12 @@ class Net(nn.Module):
         return output
 
 
-def train(args, model, device, train_loader, optimizer, epoch):
+def get_lr(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+
+
+def train(args, model, device, train_loader, optimizer, epoch, scheduler):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
         data, target = data.to(device), target.to(device)
@@ -72,10 +77,14 @@ def train(args, model, device, train_loader, optimizer, epoch):
         loss = F.nll_loss(output, target)
         loss.backward()
         optimizer.step()
+        scheduler.step()
+        current_lr = get_lr(optimizer)
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f} LR: {:.05f}'.format(
+                epoch,batch_idx * len(data), len(train_loader.dataset),
+                100. * batch_idx / len(train_loader), loss.item(),
+                current_lr
+            ))
             if args.dry_run:
                 break
 
@@ -130,10 +139,10 @@ def main():
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=14, metavar='N',
                         help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
-                        help='learning rate (default: 1.0)')
-    parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
-                        help='Learning rate step gamma (default: 0.7)')
+    parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
+                        help='learning rate (default: 0.1)')
+    parser.add_argument('--weight-decay', type=float, default=0.001,
+                        help='weight decay (default: 1e-3)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--dry-run', action='store_true', default=False,
@@ -165,22 +174,34 @@ def main():
     if args.dataset.lower() == 'mnist':
         mean_std = ((0.1307,), (0.3081,))
         initializer = datasets.MNIST
+        # 98% accuracy on MNIST without augmentations.
+        train_xforms = []
     elif args.dataset.lower() == 'cifar10':
         mean_std = ((0.4914, 0.4822, 0.4465), (0.247, 0.243, 0.261))
+        train_xforms = [
+            transforms.Pad(4),
+            transforms.RandomCrop(32)
+        ]
         initializer = datasets.CIFAR10
 
-    transform=transforms.Compose(
+    common_xforms = [
+        transforms.ToTensor(),
+        transforms.Normalize(*mean_std)
+    ]
+
+    train_transform = transforms.Compose(
         [
-            transforms.ToTensor(),
-            transforms.Normalize(*mean_std)
+            *common_xforms,
+            *train_xforms
         ]
     )
-
     train_dataset = initializer(
-        '../data', train=True, download=True, transform=transform
+        '../data', train=True, download=True, transform=train_transform
     )
+
+    val_transform = transforms.Compose([*common_xforms])
     test_dataset = initializer(
-        '../data', train=False, transform=transform
+        '../data', train=False, transform=val_transform
     )
 
     train_loader = torch.utils.data.DataLoader(train_dataset, **train_kwargs)
@@ -334,13 +355,27 @@ def main():
 
         return
 
-    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-
-    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+    optimizer = optim.SGD(
+        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+    )
+    scheduler = OneCycleLR(
+        optimizer,
+        max_lr=args.lr,
+        epochs=args.epochs,
+        steps_per_epoch=len(train_loader),
+        pct_start=0.1
+    )
     for epoch in range(1, args.epochs + 1):
-        train(args, model, device, train_loader, optimizer, epoch)
+        train(
+            args,
+            model,
+            device,
+            train_loader,
+            optimizer,
+            epoch,
+            scheduler
+        )
         test(model, device, test_loader)
-        scheduler.step()
 
     if args.save_model:
         if os.path.exists(checkpoint_path):
