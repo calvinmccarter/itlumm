@@ -17,7 +17,7 @@ import warnings
 import os
 import functools
 from collections import defaultdict
-
+from itertools import product
 
 import torch
 import torch.nn as nn
@@ -129,6 +129,143 @@ def test(model, device, test_loader):
     return test_loss, correct, n, accuracy
 
 
+def eval_with_lut(args, checkpoint_path, model, train_loader, test_loader, device):
+    def get_layer_outputs(module, inputs, outputs, accumulator=None):
+        """Save outputs of a layer to a list.
+        """
+        accumulator.append(outputs)
+
+    def register_layer_output_hooks():
+        """Register hooks to accumulate outputs of layers.
+        """
+        accumulators = defaultdict(list)
+        handles = {}
+        for module_name, module in model.named_modules():
+            if isinstance(module, torch.nn.Linear):
+                handles[module_name] = module.register_forward_hook(
+                    functools.partial(
+                        get_layer_outputs,
+                        accumulator=accumulators[module_name]
+                    )
+                )
+        return accumulators, handles
+
+    max_collect_samples = [300]
+    ncodebooks = [-2, -4, -8, -16]
+    objectives = ["mse"]
+
+    n_linear = 0
+    for module in model.modules():
+        if isinstance(module, torch.nn.Linear):
+            n_linear += 1
+    linear_layer_indices = range(n_linear)
+
+    params = product(
+        max_collect_samples,
+        ncodebooks,
+        objectives,
+        linear_layer_indices
+    )
+
+    results = []
+
+    state_dict = torch.load(checkpoint_path)
+    model.load_state_dict(state_dict)
+    print("before replacing")
+    print(model)
+
+    if args.record_and_save_layer_outputs:
+        accumulators, handles = register_layer_output_hooks()
+
+    loss, num_correct, n, accuracy = test(model, device, test_loader)
+
+    def save_layer_outputs(accumulators):
+        """Save lists of tensors in dictionary to a file.
+        """
+        for module_name in accumulators.keys():
+            layer_outputs_list = accumulators[module_name]
+            layer_outputs = torch.cat(layer_outputs_list, dim=0)
+            torch.save(
+                layer_outputs,
+                f"layer-outputs-{args.dataset}-{module_name}.pt"
+            )
+
+    if args.record_and_save_layer_outputs:
+        for handle in handles.values():
+            handle.remove()
+
+        save_layer_outputs(accumulators)
+
+    actual_ncodebooks = ["n/a"
+        for _ in model.modules() if isinstance(_, torch.nn.Linear)
+    ]
+    results.append((
+        actual_ncodebooks,
+        actual_ncodebooks,
+        "N/A",
+        "N/A",
+        "N/A",
+        loss,
+        accuracy
+    ))
+
+    def get_actual_ncodebooks(model):
+        for module in model.modules():
+            if isinstance(module, torch.nn.Linear):
+                try:
+                    yield module._idiot_opts['actual_ncodebooks']
+                except KeyError:
+                    yield "n/a"
+
+    for mcs, ncb, obj, linear_layer_index in params:
+        # Reload model before each replacement.
+        model = Net(args.dataset).to(device)
+        model.load_state_dict(state_dict)
+        model = replace(
+            train_loader,
+            model,
+            device,
+            layer_indices=[linear_layer_index],
+            ncodebooks=ncb,
+            max_collect_samples=mcs,
+            objective=obj,
+            force_softmax_and_kld_on_output_layer=True
+        )
+        print(f"after replacing linear layer {linear_layer_index}")
+        print(model)
+        loss, num_correct, n, accuracy = test(model, device, test_loader)
+        actual_ncodebooks = list(get_actual_ncodebooks(model))
+        results.append((
+            ncodebooks,
+            actual_ncodebooks,
+            mcs,
+            obj,
+            linear_layer_index,
+            loss,
+            accuracy
+        ))
+
+    for res in results:
+        print(res)
+
+    columns = [
+        "ncodebooks",
+        "actual_ncodebooks",
+        "max_collect_samples",
+        "objective",
+        "linear_layer_index",
+        "loss",
+        "accuracy"
+    ]
+
+    def save_data_frame():
+        df = pd.DataFrame(data=results, columns=columns)
+        df.to_csv("results.csv", index=False)
+
+    save_data_frame()
+
+
+
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
@@ -222,9 +359,9 @@ def main():
         '../data', train=True, download=True, transform=train_transform
     )
 
-    val_transform = transforms.Compose([*common_xforms])
+    test_transform = transforms.Compose([*common_xforms])
     test_dataset = initializer(
-        '../data', train=False, transform=val_transform
+        '../data', train=False, transform=test_transform
     )
 
     train_loader = torch.utils.data.DataLoader(train_dataset, **train_kwargs)
@@ -248,147 +385,10 @@ def main():
 
     checkpoint_path = f"{args.dataset}_mlp.pt"
 
-    def get_actual_ncodebooks(model):
-        for module in model.modules():
-            if isinstance(module, torch.nn.Linear):
-                try:
-                    yield module._idiot_opts['actual_ncodebooks']
-                except KeyError:
-                    yield "n/a"
-
     if args.eval_with_lut:
-        from itertools import product
-
-        def get_layer_outputs(module, inputs, outputs, accumulator=None):
-            """Save outputs of a layer to a list.
-            """
-            accumulator.append(outputs)
-
-        def register_layer_output_hooks():
-            """Register hooks to accumulate outputs of layers.
-            """
-            accumulators = defaultdict(list)
-            handles = {}
-            for module_name, module in model.named_modules():
-                if isinstance(module, torch.nn.Linear):
-                    handles[module_name] = module.register_forward_hook(
-                        functools.partial(
-                            get_layer_outputs,
-                            accumulator=accumulators[module_name]
-                        )
-                    )
-            return accumulators, handles
-
-
-        max_collect_samples = [300]
-        ncodebooks = [-2, -4, -8, -16]
-        objectives = ["mse"]
-
-        n_linear = 0
-        for module in model.modules():
-            if isinstance(module, torch.nn.Linear):
-                n_linear += 1
-        linear_layer_indices = range(n_linear)
-        
-        params = product(
-            max_collect_samples,
-            ncodebooks,
-            objectives,
-            linear_layer_indices
+        eval_with_lut(
+            args, checkpoint_path, model, train_loader, test_loader, device
         )
-
-        results = []
-
-        state_dict = torch.load(checkpoint_path)
-        model.load_state_dict(state_dict)
-        print("before replacing")
-        print(model)
-
-        if args.record_and_save_layer_outputs:
-            accumulators, handles = register_layer_output_hooks()
-
-        loss, num_correct, n, accuracy = test(model, device, test_loader)
-
-        def save_layer_outputs(accumulators):
-            """Save lists of tensors in dictionary to a file.
-            """
-            for module_name in accumulators.keys():
-                layer_outputs_list = accumulators[module_name]
-                layer_outputs = torch.cat(layer_outputs_list, dim=0)
-                torch.save(
-                    layer_outputs,
-                    f"layer-outputs-{args.dataset}-{module_name}.pt"
-                )
-
-        if args.record_and_save_layer_outputs:
-            for handle in handles.values():
-                handle.remove()
-
-            save_layer_outputs(accumulators)
-
-        actual_ncodebooks = ["n/a"
-            for _ in model.modules() if isinstance(_, torch.nn.Linear)
-        ]
-        results.append((
-            actual_ncodebooks,
-            actual_ncodebooks,
-            "N/A",
-            "N/A",
-            "N/A",
-            loss,
-            accuracy
-        ))
-
-        for mcs, ncb, obj, linear_layer_index in params:
-            # Reload model before each replacement.
-            model = Net(args.dataset).to(device)
-            model.load_state_dict(state_dict)
-            model = replace(
-                train_loader,
-                model,
-                device,
-                layer_indices=[linear_layer_index],
-                ncodebooks=ncb,
-                max_collect_samples=mcs,
-                objective=obj,
-                force_softmax_and_kld_on_output_layer=True
-            )
-            print(f"after replacing linear layer {linear_layer_index}")
-            print(model)
-            loss, num_correct, n, accuracy = test(model, device, test_loader)
-            actual_ncodebooks = list(get_actual_ncodebooks(model))
-            results.append((
-                ncodebooks,
-                actual_ncodebooks,
-                mcs,
-                obj,
-                linear_layer_index,
-                loss,
-                accuracy
-            ))
-
-
-        for res in results:
-            print(res)
-
-        columns = [
-            "ncodebooks",
-            "actual_ncodebooks",
-            "max_collect_samples",
-            "objective",
-            "linear_layer_index",
-            "loss",
-            "accuracy"
-        ]
-
-        def save_data_frame():
-            df = pd.DataFrame(data=results, columns=columns)
-            df.to_csv("results.csv", index=False)
-
-
-        save_data_frame()
-
-
         return
 
     optimizer = optim.SGD(
