@@ -35,7 +35,6 @@ from idiot.idiot_engine import replace
 class Net(nn.Module):
     def __init__(self, dataset):
         super(Net, self).__init__()
-        # mat1 and mat2 shapes cannot be multiplied (64x3072 and 784x200)
         if dataset.lower() == 'mnist':
             input_dim = 784
             n_hidden = 3
