@@ -1,3 +1,16 @@
+"""
+MNIST:
+    python snn2022_main.py --no-cuda --dataset mnist --lr 0.001 --epochs 10
+    ...
+    Test set: Average loss: 0.0577, Accuracy: 9822/10000 (98%)
+
+CIFAR10:
+    python snn2022_main.py --no-cuda --dataset cifar10 --lr 0.001 --epochs 100 --weight-decay 0.00001
+    ...
+    Test set: Average loss: 1.1823, Accuracy: 5814/10000 (58%)
+"""
+
+
 from __future__ import print_function
 import argparse
 import warnings
@@ -25,36 +38,41 @@ class Net(nn.Module):
         # mat1 and mat2 shapes cannot be multiplied (64x3072 and 784x200)
         if dataset.lower() == 'mnist':
             input_dim = 784
-            hidden_dim = 200
             n_hidden = 3
+            hidden_dims = [200] * n_hidden
+            dropout_p = 0.25
         elif dataset.lower() == 'cifar10':
             input_dim = 3072
-            hidden_dim = 2000
-            n_hidden = 8
+            n_hidden = 5
+            hidden_dims = [2000] * n_hidden
+            hidden_dims += [100]
+            dropout_p = 0.10
         else:
             raise ValueError(f"Invalid dataset {dataset}")
 
         self.linears = nn.ModuleList()
+        self.bns = nn.ModuleList()
         self.dropouts = nn.ModuleList()
 
-        for i in range(n_hidden):
-            dropout = nn.Dropout(0.25)
+        for i, hidden_dim in enumerate(hidden_dims):
             if i == 0:
                 i_dim = input_dim
                 o_dim = hidden_dim
             else:
-                i_dim = hidden_dim
+                i_dim = hidden_dims[i - 1]
                 o_dim = hidden_dim
             self.linears.append(nn.Linear(i_dim, o_dim))
-            self.dropouts.append(dropout)
+            self.bns.append(nn.BatchNorm1d(o_dim))
+            self.dropouts.append(nn.Dropout(dropout_p))
 
         self.classifier = nn.Linear(hidden_dim, 10)
 
     def forward(self, x):
         x = x.view(x.shape[0], -1)
 
-        for linear, dropout in zip(self.linears, self.dropouts):
+        for linear, bn, dropout in zip(self.linears, self.bns, self.dropouts):
             x = linear(x)
+            x = bn(x)
             x = F.relu(x)
             x = dropout(x)
 
@@ -141,8 +159,14 @@ def main():
                         help='number of epochs to train (default: 14)')
     parser.add_argument('--lr', type=float, default=0.1, metavar='LR',
                         help='learning rate (default: 0.1)')
-    parser.add_argument('--weight-decay', type=float, default=0.001,
-                        help='weight decay (default: 1e-3)')
+    parser.add_argument('--weight-initializer', type=str, default="xavier_normal_",
+                        choices=[
+                            "orthogonal_", "xavier_uniform_", "xavier_normal_",
+                            "kaiming_uniform_", "kaiming_normal_"
+                        ],
+                        help="torch.nn.init initializer to use for weights")
+    parser.add_argument('--weight-decay', type=float, default=0.0,
+                        help='weight decay (default: 0.)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--dry-run', action='store_true', default=False,
@@ -208,6 +232,20 @@ def main():
     test_loader = torch.utils.data.DataLoader(test_dataset, **test_kwargs)
 
     model = Net(args.dataset).to(device)
+    for module in model.modules():
+        if isinstance(module, torch.nn.Linear):
+            weight_initializer_ = getattr(
+                torch.nn.init, args.weight_initializer
+            )
+            if "kaiming" in args.weight_initializer:
+                weight_initializer_kwargs = {"non_linearity": "relu"}
+            else:
+                gain = torch.nn.init.calculate_gain("relu")
+                weight_initializer_kwargs = {"gain": gain}
+            weight_initializer_(
+                module.weight.data, **weight_initializer_kwargs
+            )
+            torch.nn.init.constant_(module.bias.data, 0.0)
 
     checkpoint_path = f"{args.dataset}_mlp.pt"
 
