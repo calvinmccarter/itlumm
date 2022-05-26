@@ -281,7 +281,6 @@ def main():
 
 
         max_collect_samples = [300]
-        #ncodebooks = [-1, -2, -3, -4, -8, -16]
         ncodebooks = [-2, -4, -8, -16]
         objectives = ["mse"]
 
