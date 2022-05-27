@@ -323,6 +323,12 @@ def finetune_with_lut(
     state_dict = torch.load(checkpoint_path)
     model.load_state_dict(state_dict)
 
+    # Disable dropout when fine-tuning. We don't want the lookup tables to be
+    # fitted using inputs with stochastic error.
+    for module in model.named_modules():
+        if isinstance(module, torch.nn.Dropout):
+            module.p = 0.0
+
     print("=> Original model")
     print(model)
     test(model, device, test_loader)
@@ -359,8 +365,7 @@ def finetune_with_lut(
         idiot_input_concat = torch.cat(layer_input, dim=0)
 
         # Fit the lookup table for this linear layer.
-        with torch.no_grad():
-            module.fit_lut(idiot_input_concat, None)
+        module.fit_lut(idiot_input_concat, None)
         module._idiot_phase = "apply_lut"
 
         # Report test set accuracy before fine-tuning the network with this
