@@ -62,7 +62,7 @@ class IdiotLinear(nn.Linear):
             #rint(f"input shape {input.shape}")
             #rint(f"weight shape {self.weight.data.shape}")
             input_shape = input.shape
-            input_np = input.reshape((-1, input.shape[-1])).numpy()
+            input_np = input.reshape((-1, input.shape[-1])).detach().numpy()
             #rint(f"input_np.shape: {input_np.shape}")
             self._lut.reset_for_new_task()
             output_np = self._lut(
@@ -134,7 +134,7 @@ class IdiotLinear(nn.Linear):
         print(f"fit_lut {algorithm} (in, out)={(n_in, n_out)}=>{ncodebooks}")
 
         # Reshape input and output to be 2d matrices, not tensors
-        input_np = input.reshape((-1, input.shape[-1])).numpy()
+        input_np = input.reshape((-1, input.shape[-1])).detach().numpy()
         #rint(f"fit_lut {self._idiot_name}")
         #rint(self)
         #rint(f"input: {input.shape} -> {input_np.shape}")
