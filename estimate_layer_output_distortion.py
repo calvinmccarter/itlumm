@@ -34,7 +34,9 @@ def estimate_rate_distortion(layer_output, eps=1.):
     N, D = Z.shape
     I = torch.eye(D)
     scalar = D / (N * eps * eps)
-    distortion = torch.logdet(I + scalar * Z.T @ Z) / 2.
+    distortion = torch.logdet(I + scalar * Z.T @ Z)
+    # Convert from nats to bits
+    distortion /= 2.
     return distortion
 
 
