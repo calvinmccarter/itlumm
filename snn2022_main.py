@@ -130,6 +130,7 @@ def test(model, device, test_loader):
     model.eval()
     test_loss = 0
     correct = 0
+    targets = []
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
@@ -137,15 +138,17 @@ def test(model, device, test_loader):
             test_loss += F.nll_loss(output, target, reduction='sum').item()
             pred = output.argmax(dim=1, keepdim=True)
             correct += pred.eq(target.view_as(pred)).sum().item()
+            targets.append(target)
 
     test_loss /= len(test_loader.dataset)
 
     n = len(test_loader.dataset)
     accuracy = 100. * correct / len(test_loader.dataset)
+    targets = torch.cat(targets, dim=0)
     fmt_str = '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'
     print(fmt_str.format(test_loss, correct, n, accuracy))
 
-    return test_loss, correct, n, accuracy
+    return test_loss, correct, n, accuracy, targets
 
 
 def eval_with_lut(
@@ -199,7 +202,7 @@ def eval_with_lut(
     if args.record_and_save_layer_outputs:
         accumulators, handles = register_layer_output_hooks()
 
-    loss, num_correct, n, accuracy = test(model, device, test_loader)
+    loss, num_correct, n, accuracy, targets = test(model, device, test_loader)
 
     def save_layer_outputs(accumulators):
         """Save lists of tensors in dictionary to a file.
@@ -217,6 +220,7 @@ def eval_with_lut(
             handle.remove()
 
         save_layer_outputs(accumulators)
+        torch.save(targets, f"test-targets-{args.dataset}.pt")
 
     actual_ncodebooks = [
         "n/a" for _ in model.modules() if isinstance(_, torch.nn.Linear)
@@ -259,7 +263,7 @@ def eval_with_lut(
         )
         print(f"after replacing linear layer {linear_module_index}")
         print(model)
-        loss, num_correct, n, accuracy = test(model, device, test_loader)
+        loss, num_correct, n, accuracy, _ = test(model, device, test_loader)
         actual_ncodebooks = list(get_actual_ncodebooks(model))
         results.append((
             ncodebooks,
