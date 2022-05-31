@@ -1,10 +1,14 @@
 # coding: utf-8
 """
-Estimate the instrinc dimensionality of layer output using TwoNN estimator.
+Estimate the coding rate distortion of layer output.
 
-    python estimate_layer_output_dimensionality.py \
-        --layer-output-paths \
-            layer-outputs-mnist-linears.* layer-outputs-mnist-classifier.pt
+    python estimate_layer_output_distortion.py \
+        --layer-output-paths layer-outputs-mnist-* \
+        --test-target-path test-targets-mnist.pt
+
+Yu, Y., Chan, K. H. R., You, C., Song, C., & Ma, Y. (2020).
+Learning diverse and discriminative representations via the principle of
+maximal coding rate reduction. NeurIPS, 33, 9422-9434.
 """
 
 from argparse import ArgumentParser
@@ -12,14 +16,13 @@ from argparse import ArgumentParser
 import torch
 
 
-def estimate_rate_distortion(layer_output, eps=0.1):
+def estimate_rate_distortion(layer_output, eps=1.):
     """Estimate the rate distortion, the number of binary
     bits needed to encode a sample such that expected decoding
     error < eps (where eps is the desired precision).
 
     Arguments:
         layer_output (torch.Tensor): output of layer
-
         eps (float): prescribed precision
 
     Returns:
@@ -35,7 +38,7 @@ def estimate_rate_distortion(layer_output, eps=0.1):
     return distortion
 
 
-def estimate_conditional_rate_distortion(layer_output, labels, eps=0.1):
+def estimate_conditional_rate_distortion(layer_output, targets, eps=1.):
     """Estimate the conditional rate distortion, the number of binary
     bits needed to encode a sample such that expected decoding
     error < eps (where eps is the desired precision).
@@ -44,9 +47,7 @@ def estimate_conditional_rate_distortion(layer_output, labels, eps=0.1):
 
     Arguments:
         layer_output (torch.Tensor): output of layer
-
-        labels (torch.Tensor): labels of samples -- 1d of ints
-
+        targets (torch.Tensor): labels of samples -- 1d of ints
         eps (float): maximum allowed distortion
 
     Returns:
@@ -54,10 +55,10 @@ def estimate_conditional_rate_distortion(layer_output, labels, eps=0.1):
 
     """
     Z = layer_output
+    labels = targets
     assert Z.dim() == 2
     N, D = Z.shape
     I = torch.eye(D)
-    K = labels.unique().numel()
     distortion = torch.tensor(0.)
     for uval in labels.unique():
         n_uval = (labels == uval).sum()
@@ -67,11 +68,17 @@ def estimate_conditional_rate_distortion(layer_output, labels, eps=0.1):
     return distortion
 
 
-def main(layer_output_paths):
+def main(layer_output_paths, test_target_path):
+    test_targets = torch.load(test_target_path)
     for layer_output_path in layer_output_paths:
         layer_output = torch.load(layer_output_path)
         distortion = estimate_rate_distortion(layer_output)
-        print(layer_output_path, distortion)
+        cdistortion = estimate_conditional_rate_distortion(
+            layer_output, test_targets)
+        print(
+            f"{layer_output_path} combined:{distortion:.3f} "
+            f"conditional:{cdistortion:.3f} delta:{distortion-cdistortion:.3f}"
+        )
 
 
 def get_parser():
@@ -86,10 +93,17 @@ def get_parser():
         type=str,
         help="Path to saved torch tensor containing layer outputs"
     )
+    parser.add_argument(
+        "--test-target-path",
+        default="",
+        required=True,
+        type=str,
+        help="Path to saved torch tensor containing test set targets"
+    )
     return parser
 
 
 if __name__ == "__main__":
     parser = get_parser()
     args = parser.parse_args()
-    main(args.layer_output_paths)
+    main(args.layer_output_paths, args.test_target_path)
