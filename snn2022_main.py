@@ -175,12 +175,12 @@ def eval_with_lut(
                 )
         return accumulators, handles
 
-    max_collect_samples = [300]
-    ncodebooks = [-2, -4, -8, -16]
+    max_collect_samples = [50000]
+    ncodebooks = [-4]
     objectives = ["mse"]
 
     n_linear = count_linear_layers(model)
-    linear_layer_indices = range(n_linear)
+    linear_layer_indices = list(range(n_linear)) + [None]
 
     params = product(
         max_collect_samples,
@@ -243,11 +243,15 @@ def eval_with_lut(
         # Reload model before each replacement.
         model = Net(args.dataset).to(device)
         model.load_state_dict(state_dict)
+        if linear_module_index is None:
+            layer_indices = None
+        else:
+            layer_indices = [linear_module_index]
         model = replace(
             train_loader,
             model,
             device,
-            layer_indices=[linear_module_index],
+            layer_indices=layer_indices,
             ncodebooks=ncb,
             max_collect_samples=mcs,
             objective=obj,
@@ -389,20 +393,22 @@ def finetune_with_lut(
             for i, (linear_name, linear_module) in iterator:
                 # i = [0, 1, 2, 3]
                 # linear_module_index = [0, 1, 2, 3]
-                print("i", i, "linear_name", linear_name)
                 if i > linear_module_index:
-                    print(f"=> Fine-tuning linear.{linear_name} parameters")
-                    trainable_params.append(
-                        {'params': linear_module.parameters()}
-                    )
-                    # When training a linear layer, also train its subsequent
+                    # When training a linear layer, also train its previous
                     # batch norm layer.
-                    bn_module = model.bns[int(linear_name)]
+                    bn_index = int(linear_name) - 1
+                    bn_module = model.bns[bn_index]
                     if bn_module is not None:
-                        print(f"=> Fine-tuning bns.{linear_name} parameters")
+                        print(f"=> Fine-tuning bns.{bn_index} parameters")
                         trainable_params.append(
                             {'params': bn_module.parameters()}
                         )
+
+                    print(f"=> Fine-tuning linears.{linear_name} parameters")
+                    trainable_params.append(
+                        {'params': linear_module.parameters()}
+                    )
+
             return trainable_params
 
         trainable_params = get_trainable_params()
