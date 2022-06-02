@@ -151,6 +151,75 @@ def test(model, device, test_loader):
     return test_loss, correct, n, accuracy, targets
 
 
+def save_lut_outputs(
+    args, checkpoint_path, model, train_loader, test_loader, device
+):
+    def get_layer_outputs(module, inputs, outputs, accumulator=None):
+        """Save outputs of a layer to a list.
+        """
+        print("here {outputs.shape}")
+        accumulator.append(outputs)
+
+    def register_layer_output_hooks():
+        """Register hooks to accumulate outputs of layers.
+        """
+        accumulators = defaultdict(list)
+        handles = {}
+        for module_name, module in model.named_modules():
+            if not len(module_name):
+                print(f"SKIPPING module name {module_name}")
+                continue
+            print(f"module name {module_name}")
+            if isinstance(module, torch.nn.Linear):
+                print(f"registering {module}")
+                handles[module_name] = module.register_forward_hook(
+                    functools.partial(
+                        get_layer_outputs,
+                        accumulator=accumulators[module_name]
+                    )
+                )
+        return accumulators, handles
+
+    results = []
+
+    state_dict = torch.load(checkpoint_path)
+    model.load_state_dict(state_dict)
+    print("before replacing")
+    print(model)
+
+    model = Net(args.dataset).to(device)
+    model.load_state_dict(state_dict)
+    model = replace(
+        train_loader,
+        model,
+        device,
+        layer_indices=None,
+        ncodebooks=-4,
+        max_collect_samples=50000,
+        objective='mse',
+        force_softmax_and_kld_on_output_layer=True
+    )
+    print("done replacing everything")
+    print(model)
+    accumulators, handles = register_layer_output_hooks()
+
+    loss, num_correct, n, accuracy, targets = test(model, device, test_loader)
+
+    def save_layer_outputs(accumulators):
+        """Save lists of tensors in dictionary to a file.
+        """
+        for module_name in accumulators.keys():
+            layer_outputs_list = accumulators[module_name]
+            layer_outputs = torch.cat(layer_outputs_list, dim=0)
+            torch.save(
+                layer_outputs,
+                f"lut-layer-outputs-{args.dataset}-{module_name}.pt"
+            )
+    save_layer_outputs(accumulators)
+    torch.save(targets, f"lut-test-targets-{args.dataset}.pt")
+
+
+
 def eval_with_lut(
     args, checkpoint_path, model, train_loader, test_loader, device
 ):
@@ -479,6 +548,10 @@ def main():
         help='Dataset to train/test on'
     )
     parser.add_argument(
+        '--save-lut-outputs', action='store_true',
+        help='Evaluate with lookup tables'
+    )
+    parser.add_argument(
         '--eval-with-lut', action='store_true',
         help='Evaluate with lookup tables'
     )
@@ -602,7 +675,12 @@ def main():
 
     checkpoint_path = f"{args.dataset}_mlp.pt"
 
-    if args.eval_with_lut:
+    if args.save_lut_outputs:
+        save_lut_outputs(
+            args, checkpoint_path, model, train_loader, test_loader, device
+        )
+        return
+    elif args.eval_with_lut:
         eval_with_lut(
             args, checkpoint_path, model, train_loader, test_loader, device
         )
