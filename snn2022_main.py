@@ -319,12 +319,16 @@ def do_save(args, model, checkpoint_path):
 
 
 def get_trainable_params_input_first(model, linear_module_index):
-    """
-    If a module is BatchNorm1d, include it in trainable params.
+    """Get the trainable parameters for input-first fine-tuning.
 
-    If a module is Linear, only include it in trainable params if it is
-    later in the network than the layer that we just replaced earlier
-    in the above loop.
+    When doing input-first fine-tuning, the input Linear layer is replaced
+    first, then subsequent intermediate Linear layers, then the output layer.
+
+    If a module is Linear, only include it in trainable params if it occurs
+    after the Linear layer with the given linear module index.
+
+    If a module is BatchNorm1d, it is included in trainable params if it
+    precedes a Linear layer that's included in trainable params.
     """
     trainable_params = []
 
@@ -352,7 +356,40 @@ def get_trainable_params_input_first(model, linear_module_index):
 
 
 def get_trainable_params_output_first(model, linear_module_index):
-    raise NotImplementedError()
+    """Get the trainable parameters for output-first fine-tuning.
+
+    When doing output-first fine-tuning, the output Linear layer is replaced
+    first, then subsequent intermediate Linear layers, then the input layer.
+
+    If a module is Linear, only include it in trainable params if it occurs
+    before the Linear layer with the given linear module index.
+
+    If a module is BatchNorm1d, it is included in trainable params if it
+    precedes a Linear layer that's included in trainable params.
+    """
+    trainable_params = []
+
+    iterator = enumerate(model.linears.named_children())
+    for i, (linear_name, linear_module) in iterator:
+        # i = [0, 1, 2, 3]
+        # linear_module_index = [3, 2, 1, 0]
+        if i < linear_module_index:
+            # When training a linear layer, also train its subsequent
+            # batch norm layer.
+            bn_index = int(linear_name)
+            bn_module = model.bns[bn_index]
+            if bn_module is not None:
+                print(f"=> Fine-tuning bns.{bn_index} parameters")
+                trainable_params.append(
+                    {'params': bn_module.parameters()}
+                )
+
+            print(f"=> Fine-tuning linears.{linear_name} parameters")
+            trainable_params.append(
+                {'params': linear_module.parameters()}
+            )
+
+    return trainable_params
 
 
 def get_trainable_params(args, model, linear_module_index):
