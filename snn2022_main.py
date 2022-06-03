@@ -318,6 +318,52 @@ def do_save(args, model, checkpoint_path):
         torch.save(model.state_dict(), checkpoint_path)
 
 
+def get_trainable_params_input_first(model, linear_module_index):
+    """
+    If a module is BatchNorm1d, include it in trainable params.
+
+    If a module is Linear, only include it in trainable params if it is
+    later in the network than the layer that we just replaced earlier
+    in the above loop.
+    """
+    trainable_params = []
+
+    iterator = enumerate(model.linears.named_children())
+    for i, (linear_name, linear_module) in iterator:
+        # i = [0, 1, 2, 3]
+        # linear_module_index = [0, 1, 2, 3]
+        if i > linear_module_index:
+            # When training a linear layer, also train its previous
+            # batch norm layer.
+            bn_index = int(linear_name) - 1
+            bn_module = model.bns[bn_index]
+            if bn_module is not None:
+                print(f"=> Fine-tuning bns.{bn_index} parameters")
+                trainable_params.append(
+                    {'params': bn_module.parameters()}
+                )
+
+            print(f"=> Fine-tuning linears.{linear_name} parameters")
+            trainable_params.append(
+                {'params': linear_module.parameters()}
+            )
+
+    return trainable_params
+
+
+def get_trainable_params_output_first(model, linear_module_index):
+    raise NotImplementedError()
+
+
+def get_trainable_params(args, model, linear_module_index):
+    if args.finetune_with_lut == 'input-first':
+        return get_trainable_params_input_first(model, linear_module_index)
+    elif args.finetune_with_lut == 'output-first':
+        return get_trainable_params_output_first(model, linear_module_index)
+    else:
+        raise ValueError(f"Invalid finetuning mode {args.finetune_with_lut}")
+
+
 def finetune_with_lut(
     args, checkpoint_path, model, train_loader, test_loader, device, **config
 ):
@@ -355,12 +401,11 @@ def finetune_with_lut(
         if isinstance(module, torch.nn.Linear):
             linear_modules.append((module_name, module))
 
-    iterator = enumerate(linear_modules)
-    for linear_module_index, (module_name, module) in iterator:
-        print(f"=> Replacing layer {module_name}")
-        layer_input = []
-        module._idiot_phase = "collect_input"
-        module._idiot_input = layer_input
+    iterator = list(enumerate(linear_modules))
+    if args.finetune_with_lut == 'output-first':
+        iterator.reverse()
+
+    def make_input(layer_input):
         # Collect input for this linear layer.
         for data, label in train_loader:
             len_before = len(layer_input)
@@ -370,7 +415,14 @@ def finetune_with_lut(
                 # The length of layer_input didn't change this time, so we're
                 # done collecting input.
                 break
-        idiot_input_concat = torch.cat(layer_input, dim=0)
+        return torch.cat(layer_input, dim=0)
+
+    for linear_module_index, (module_name, module) in iterator:
+        print(f"=> Replacing layer {module_name}")
+        layer_input = []
+        module._idiot_phase = "collect_input"
+        module._idiot_input = layer_input
+        idiot_input_concat = make_input(layer_input)
 
         # Fit the lookup table for this linear layer.
         module.fit_lut(idiot_input_concat, None)
@@ -383,39 +435,9 @@ def finetune_with_lut(
         print(model)
         test(model, device, test_loader)
 
-        """
-        If a module is BatchNorm1d, include it in trainable params.
-
-        If a module is Linear, only include it in trainable params if it is
-        later in the network than the layer that we just replaced earlier in
-        the above loop.
-        """
-        def get_trainable_params():
-            trainable_params = []
-
-            iterator = enumerate(model.linears.named_children())
-            for i, (linear_name, linear_module) in iterator:
-                # i = [0, 1, 2, 3]
-                # linear_module_index = [0, 1, 2, 3]
-                if i > linear_module_index:
-                    # When training a linear layer, also train its previous
-                    # batch norm layer.
-                    bn_index = int(linear_name) - 1
-                    bn_module = model.bns[bn_index]
-                    if bn_module is not None:
-                        print(f"=> Fine-tuning bns.{bn_index} parameters")
-                        trainable_params.append(
-                            {'params': bn_module.parameters()}
-                        )
-
-                    print(f"=> Fine-tuning linears.{linear_name} parameters")
-                    trainable_params.append(
-                        {'params': linear_module.parameters()}
-                    )
-
-            return trainable_params
-
-        trainable_params = get_trainable_params()
+        trainable_params = get_trainable_params(
+            args, model, linear_module_index
+        )
         if len(trainable_params) == 0:
             print("=> Fine-tuning procedure is complete")
             test(model, device, test_loader)
@@ -483,8 +505,13 @@ def main():
         help='Evaluate with lookup tables'
     )
     parser.add_argument(
-        '--finetune-with-lut', action='store_true',
-        help='Finetune a trained checkpoint, layerwise, with lookup tables'
+        '--finetune-with-lut',
+        type=str,
+        choices=['input-first', 'output-first'],
+        help=(
+            'Finetune a trained checkpoint, layerwise, with lookup tables, '
+            'starting with either the input or output layer'
+        )
     )
     parser.add_argument(
         '--record-and-save-layer-outputs', action='store_true',
