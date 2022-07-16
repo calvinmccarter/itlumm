@@ -27,7 +27,7 @@ import utils
 
 from resmlp_models import *
 
-from idiot.idiot_engine import train_one_epoch, evaluate, replace
+from driveit.driveit_engine import train_one_epoch, evaluate, replace
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DeiT training and evaluation script', add_help=False)
