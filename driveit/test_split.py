@@ -9,14 +9,14 @@ import torchvision.transforms as tvt
 from PIL import Image
 from torchvision import transforms
 
-from idiot.idiot import (
+from driveit.driveit import (
     IdiotLinear,
     get_descendant,
     replace_descendants,
     set_all_descendant_attrs,
 )
 
-from idiot.mlp_mixer import MLPMixer
+from driveit.mlp_mixer import MLPMixer
 
 home = os.environ['HOME']
 
@@ -70,10 +70,10 @@ if __name__ == "__main__":
         f"{home}/sandbox/MLP-Mixer/training_artefacts/model_epoch_41.pth"))
     net.eval()
 
-    idiot_ordering = []  # ordered list of IdiotLinear layers
+    driveit_ordering = []  # ordered list of IdiotLinear layers
     max_collect_samples = 10240
     algorithm = "pluto"
-    idiot_opts = {
+    driveit_opts = {
         "max_collect_samples": max_collect_samples,
         "ncodebooks": -2,
         "nonzeros_heuristic": "pq",
@@ -84,63 +84,63 @@ if __name__ == "__main__":
 
     new_net = replace_descendants(
         net,
-        idiot_ordering,
-        idiot_opts,
+        driveit_ordering,
+        driveit_opts,
         "",
         None,
     )
     new_net.eval()
 
-    set_all_descendant_attrs(new_net, "_idiot_phase", "find_ordering")
+    set_all_descendant_attrs(new_net, "_driveit_phase", "find_ordering")
     for data, label in test_loader:
-        output = new_net(data) # mutates idiot_ordering
+        output = new_net(data) # mutates driveit_ordering
         break
-    set_all_descendant_attrs(new_net, "_idiot_phase", "noop")
+    set_all_descendant_attrs(new_net, "_driveit_phase", "noop")
 
     def f_softmax(x):
         return torch.softmax(x, dim=1)
     get_descendant(
-        new_net, idiot_ordering[-1])._idiot_activation = f_softmax
+        new_net, driveit_ordering[-1])._driveit_activation = f_softmax
     get_descendant(
-        new_net, idiot_ordering[-1])._idiot_opts["objective"] = "kld"
+        new_net, driveit_ordering[-1])._driveit_opts["objective"] = "kld"
 
 
     def set_activation_gelu(mod):
         if isinstance(mod, IdiotLinear):
-            if mod._idiot_name.endswith("fc1"):
-                mod._idiot_activation = F.gelu
+            if mod._driveit_name.endswith("fc1"):
+                mod._driveit_activation = F.gelu
     new_net.apply(set_activation_gelu)
 
     # PLUTO
     with torch.no_grad():
-        for lname in idiot_ordering:
+        for lname in driveit_ordering:
             acc = 0.0
             for data, label in test_loader:
                 output = new_net(data)
                 acc += (output.argmax(dim=1) == label).float().mean()
             acc = acc / len(test_loader)
-            print(f"idiot-{algorithm}: before replacing {lname}: acc={acc}")
+            print(f"driveit-{algorithm}: before replacing {lname}: acc={acc}")
 
-            idiot_input = []  # list for storing all activations
-            get_descendant(new_net, lname)._idiot_phase = "collect_input"
-            get_descendant(new_net, lname)._idiot_input = idiot_input
+            driveit_input = []  # list for storing all activations
+            get_descendant(new_net, lname)._driveit_phase = "collect_input"
+            get_descendant(new_net, lname)._driveit_input = driveit_input
             for bix, (data, label) in enumerate(train_loader):
-                # Modifies idiot_input
-                idiot_input_len = len(idiot_input)
+                # Modifies driveit_input
+                driveit_input_len = len(driveit_input)
                 output = new_net(data)
-                if len(idiot_input) == idiot_input_len:
+                if len(driveit_input) == driveit_input_len:
                     break
 
-            idiot_input_concat = torch.cat(idiot_input, dim=0)
-            get_descendant(new_net, lname).fit_lut(idiot_input_concat, None)
-            get_descendant(new_net, lname)._idiot_phase = "apply_lut"
+            driveit_input_concat = torch.cat(driveit_input, dim=0)
+            get_descendant(new_net, lname).fit_lut(driveit_input_concat, None)
+            get_descendant(new_net, lname)._driveit_phase = "apply_lut"
 
         acc = 0.0
         for data, label in test_loader:
-            # Modifies idiot_input
+            # Modifies driveit_input
             output = new_net(data)
             acc += (output.argmax(dim=1) == label).float().mean()
         acc = acc / len(test_loader)
-        print(f"idiot-{algorithm}: final {max_collect_samples}: acc={acc}")
+        print(f"driveit-{algorithm}: final {max_collect_samples}: acc={acc}")
 
 

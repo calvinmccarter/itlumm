@@ -32,7 +32,7 @@ from torchvision import datasets, transforms
 import pandas as pd
 
 
-from idiot.idiot_engine import replace
+from driveit.driveit_engine import replace
 
 
 class Net(nn.Module):
@@ -322,7 +322,7 @@ def eval_with_lut(
         for module in model.modules():
             if isinstance(module, torch.nn.Linear):
                 try:
-                    yield module._idiot_opts['actual_ncodebooks']
+                    yield module._driveit_opts['actual_ncodebooks']
                 except KeyError:
                     yield "n/a"
 
@@ -444,8 +444,8 @@ def finetune_with_lut(
     for linear_module_index, (module_name, module) in iterator:
         print(f"=> Replacing layer {module_name}")
         layer_input = []
-        module._idiot_phase = "collect_input"
-        module._idiot_input = layer_input
+        module._driveit_phase = "collect_input"
+        module._driveit_input = layer_input
         # Collect input for this linear layer.
         for data, label in train_loader:
             len_before = len(layer_input)
@@ -455,11 +455,11 @@ def finetune_with_lut(
                 # The length of layer_input didn't change this time, so we're
                 # done collecting input.
                 break
-        idiot_input_concat = torch.cat(layer_input, dim=0)
+        driveit_input_concat = torch.cat(layer_input, dim=0)
 
         # Fit the lookup table for this linear layer.
-        module.fit_lut(idiot_input_concat, None)
-        module._idiot_phase = "apply_lut"
+        module.fit_lut(driveit_input_concat, None)
+        module._driveit_phase = "apply_lut"
 
         # Report test set accuracy before fine-tuning the network with this
         # (and all previous) linear layer's matrix multiplications replaced by

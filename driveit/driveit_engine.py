@@ -13,10 +13,10 @@ import torch.nn.functional as F
 from timm.data import Mixup
 from timm.utils import accuracy, ModelEma
 
-from idiot.losses import DistillationLoss
-import idiot.utils
+from driveit.losses import DistillationLoss
+import driveit.utils
 
-from idiot.idiot import (
+from driveit.driveit import (
     IdiotLinear,
     get_descendant,
     replace_descendants,
@@ -31,8 +31,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     model_ema: Optional[ModelEma] = None, mixup_fn: Optional[Mixup] = None,
                     set_training_mode=True):
     model.train(set_training_mode)
-    metric_logger = idiot.utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter('lr', idiot.utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
+    metric_logger = driveit.utils.MetricLogger(delimiter="  ")
+    metric_logger.add_meter('lr', driveit.utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
@@ -76,7 +76,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 def evaluate(data_loader, model, device):
     criterion = torch.nn.CrossEntropyLoss()
 
-    metric_logger = idiot.utils.MetricLogger(delimiter="  ")
+    metric_logger = driveit.utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
     # switch to evaluation mode
@@ -112,14 +112,14 @@ def replace(
     device,
     layer_indices=None,
     force_softmax_and_kld_on_output_layer=True,
-    **idiot_opt_kwargs
+    **driveit_opt_kwargs
 ):
     net.eval()
 
-    idiot_ordering = []  # ordered list of IdiotLinear layers
+    driveit_ordering = []  # ordered list of IdiotLinear layers
     max_collect_samples = 1000
     algorithm = "pluto"
-    idiot_opts = {
+    driveit_opts = {
         "max_collect_samples": max_collect_samples,
         "ncodebooks": -4,
         "nonzeros_heuristic": "r2",
@@ -127,23 +127,23 @@ def replace(
         "objective": "mse",
         "accumulate_how": "mean",
     }
-    idiot_opts.update(**idiot_opt_kwargs)
+    driveit_opts.update(**driveit_opt_kwargs)
 
     new_net = replace_descendants(
         net,
-        idiot_ordering,
-        idiot_opts,
+        driveit_ordering,
+        driveit_opts,
         "",
         None,
     )
     new_net.eval()
 
-    set_all_descendant_attrs(new_net, "_idiot_phase", "find_ordering")
+    set_all_descendant_attrs(new_net, "_driveit_phase", "find_ordering")
     for data, label in data_loader:
-        output = new_net(data) # mutates idiot_ordering
+        output = new_net(data) # mutates driveit_ordering
         break
-    set_all_descendant_attrs(new_net, "_idiot_phase", "noop")
-    print(idiot_ordering)
+    set_all_descendant_attrs(new_net, "_driveit_phase", "noop")
+    print(driveit_ordering)
     print(new_net)
 
     if force_softmax_and_kld_on_output_layer:
@@ -153,30 +153,30 @@ def replace(
         # networks that we're considering now.
         def f_softmax(x):
             return torch.softmax(x, dim=1)
-        output_layer = get_descendant(new_net, idiot_ordering[-1])
-        output_layer._idiot_activation = f_softmax
-        output_layer._idiot_opts["objective"] = "kld"
+        output_layer = get_descendant(new_net, driveit_ordering[-1])
+        output_layer._driveit_activation = f_softmax
+        output_layer._driveit_opts["objective"] = "kld"
 
     if layer_indices is None:
-        layer_indices = set(range(len(idiot_ordering)))
+        layer_indices = set(range(len(driveit_ordering)))
 
     # PLUTO
-    for i, lname in enumerate(idiot_ordering):
+    for i, lname in enumerate(driveit_ordering):
         if i not in layer_indices:
             continue
         print(f"replacing {i}-th layer {lname}")
-        idiot_input = []  # list for storing all activations
-        get_descendant(new_net, lname)._idiot_phase = "collect_input"
-        get_descendant(new_net, lname)._idiot_input = idiot_input
+        driveit_input = []  # list for storing all activations
+        get_descendant(new_net, lname)._driveit_phase = "collect_input"
+        get_descendant(new_net, lname)._driveit_input = driveit_input
         for bix, (data, label) in enumerate(data_loader):
-            # Modifies idiot_input
-            idiot_input_len = len(idiot_input)
+            # Modifies driveit_input
+            driveit_input_len = len(driveit_input)
             output = new_net(data)
-            if len(idiot_input) == idiot_input_len:
+            if len(driveit_input) == driveit_input_len:
                 break
 
-        idiot_input_concat = torch.cat(idiot_input, dim=0)
-        get_descendant(new_net, lname).fit_lut(idiot_input_concat, None)
-        get_descendant(new_net, lname)._idiot_phase = "apply_lut"
+        driveit_input_concat = torch.cat(driveit_input, dim=0)
+        get_descendant(new_net, lname).fit_lut(driveit_input_concat, None)
+        get_descendant(new_net, lname)._driveit_phase = "apply_lut"
 
     return new_net
