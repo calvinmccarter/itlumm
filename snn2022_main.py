@@ -19,6 +19,9 @@ import functools
 from collections import defaultdict
 from itertools import product
 
+
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import confusion_matrix
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -129,7 +132,7 @@ def train(args, model, device, train_loader, optimizer, epoch, scheduler):
 def test(model, device, test_loader):
     model.eval()
     test_loss = 0
-    correct = 0
+    preds = []
     targets = []
     with torch.no_grad():
         for data, target in test_loader:
@@ -137,18 +140,27 @@ def test(model, device, test_loader):
             output = model(data)
             test_loss += F.nll_loss(output, target, reduction='sum').item()
             pred = output.argmax(dim=1, keepdim=True)
-            correct += pred.eq(target.view_as(pred)).sum().item()
+            preds.append(pred)
             targets.append(target)
 
     test_loss /= len(test_loader.dataset)
 
-    n = len(test_loader.dataset)
-    accuracy = 100. * correct / len(test_loader.dataset)
+    preds = torch.cat(preds, dim=0)
     targets = torch.cat(targets, dim=0)
-    fmt_str = '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'
-    print(fmt_str.format(test_loss, correct, n, accuracy))
 
-    return test_loss, correct, n, accuracy, targets
+    accuracy = 100 * accuracy_score(targets, preds)
+    correct = accuracy_score(targets, preds, normalize=False)
+    cmatrix = confusion_matrix(targets, preds)
+    per_class_accuracy = 100 * cmatrix.diagonal() / cmatrix.sum(axis=1)
+    per_class_accuracy = [float(f"{acc:.1f}") for acc in per_class_accuracy]
+
+    n = len(test_loader.dataset)
+    #accuracy = 100. * correct / len(test_loader.dataset)
+    fmt_str = '\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'
+    print(fmt_str.format(test_loss, correct, n, accuracy))
+    print(f"          Per-class Accuracy: {per_class_accuracy}")
+
+    return test_loss, correct, n, accuracy, per_class_accuracy, targets
 
 
 def save_lut_outputs(
@@ -271,7 +283,9 @@ def eval_with_lut(
     if args.record_and_save_layer_outputs:
         accumulators, handles = register_layer_output_hooks()
 
-    loss, num_correct, n, accuracy, targets = test(model, device, test_loader)
+    loss, num_correct, n, accuracy, per_class_accuracy, targets = test(
+        model, device, test_loader
+    )
 
     def save_layer_outputs(accumulators):
         """Save lists of tensors in dictionary to a file.
@@ -332,7 +346,9 @@ def eval_with_lut(
         )
         print(f"after replacing linear layer {linear_module_index}")
         print(model)
-        loss, num_correct, n, accuracy, _ = test(model, device, test_loader)
+        loss, num_correct, n, accuracy, per_class_accuracy, _ = test(
+            model, device, test_loader
+        )
         actual_ncodebooks = list(get_actual_ncodebooks(model))
         results.append((
             ncodebooks,
