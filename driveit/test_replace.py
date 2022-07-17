@@ -10,7 +10,7 @@ from PIL import Image
 from torchvision import transforms
 
 from driveit.driveit import (
-    IdiotLinear,
+    DriveitLinear,
     get_descendant,
     replace_descendants,
     set_all_descendant_attrs,
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     values = values.detach().numpy()
     print(f"original MLPMixer {class_names} {values}")
 
-    driveit_ordering = []  # ordered list of IdiotLinear layers
+    driveit_ordering = []  # ordered list of DriveitLinear layers
     max_collect_samples = 10240
     algorithm = "pluto"
     driveit_opts = {
@@ -104,7 +104,7 @@ if __name__ == "__main__":
     values, indices = torch.topk(output, k = 5)
     class_names = [cifar10_classes[i] for i in indices.numpy().astype(int)]
     values = values.detach().numpy()
-    print(f"after Linear->IdiotLinear {class_names} {values}")
+    print(f"after Linear->DriveitLinear {class_names} {values}")
 
     set_all_descendant_attrs(new_net, "_driveit_phase", "find_ordering")
     output = new_net(image)  # mutates driveit_ordering
@@ -121,7 +121,7 @@ if __name__ == "__main__":
         new_net, driveit_ordering[-1])._driveit_activation = f_softmax
     #print(new_net)
     def set_activation_relu(mod):
-        if isinstance(mod, IdiotLinear):
+        if isinstance(mod, DriveitLinear):
             if mod._driveit_name.endswith("fc1"):
                 mod._driveit_activation = F.gelu
     new_net.apply(set_activation_relu)

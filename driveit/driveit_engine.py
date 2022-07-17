@@ -17,7 +17,7 @@ from driveit.losses import DistillationLoss
 import driveit.utils
 
 from driveit.driveit import (
-    IdiotLinear,
+    DriveitLinear,
     get_descendant,
     replace_descendants,
     set_all_descendant_attrs,
@@ -116,7 +116,7 @@ def replace(
 ):
     net.eval()
 
-    driveit_ordering = []  # ordered list of IdiotLinear layers
+    driveit_ordering = []  # ordered list of DriveitLinear layers
     max_collect_samples = 1000
     algorithm = "pluto"
     driveit_opts = {

@@ -10,7 +10,7 @@ from PIL import Image
 from torchvision import transforms
 
 from driveit.driveit import (
-    IdiotLinear,
+    DriveitLinear,
     get_descendant,
     replace_descendants,
     set_all_descendant_attrs,
@@ -70,7 +70,7 @@ if __name__ == "__main__":
         f"{home}/sandbox/MLP-Mixer/training_artefacts/model_epoch_41.pth"))
     net.eval()
 
-    driveit_ordering = []  # ordered list of IdiotLinear layers
+    driveit_ordering = []  # ordered list of DriveitLinear layers
     max_collect_samples = 10240
     algorithm = "pluto"
     driveit_opts = {
@@ -106,7 +106,7 @@ if __name__ == "__main__":
 
 
     def set_activation_gelu(mod):
-        if isinstance(mod, IdiotLinear):
+        if isinstance(mod, DriveitLinear):
             if mod._driveit_name.endswith("fc1"):
                 mod._driveit_activation = F.gelu
     new_net.apply(set_activation_gelu)

@@ -11,7 +11,7 @@ from torch import Tensor
 import bolt.experiments.python.vq_amm as vq_amm
 
 
-DEFAULT_IDIOT_OPTS = {
+DEFAULT_DRIVEIT_OPTS = {
     "algorithm": "pluto",
     "max_collect_samples": 1e6,
     "ncodebooks": None,
@@ -20,7 +20,7 @@ DEFAULT_IDIOT_OPTS = {
     "accumulate_how": "mean",
 }
 
-class IdiotLinear(nn.Linear):
+class DriveitLinear(nn.Linear):
     r"""Linear that supports ITLUMM.
 
     Args:
@@ -46,7 +46,7 @@ class IdiotLinear(nn.Linear):
         )
 
         self._driveit_ordering = driveit_ordering  # external
-        self._driveit_opts = deepcopy(DEFAULT_IDIOT_OPTS)
+        self._driveit_opts = deepcopy(DEFAULT_DRIVEIT_OPTS)
         self._driveit_opts.update(deepcopy(driveit_opts) or {})
         self._driveit_name = deepcopy(driveit_name)
         self._driveit_activation = deepcopy(driveit_activation)
@@ -201,7 +201,7 @@ def replace_linear(
     driveit_activation,
 ):
     """
-    newmod = IdiotLinear(
+    newmod = DriveitLinear(
         in_features=mod.in_features,
         out_features=mod.out_features,
         bias=mod.bias is not None,
@@ -215,7 +215,7 @@ def replace_linear(
     else:
         newmod.eval()
     """
-    newmod = IdiotLinear(
+    newmod = DriveitLinear(
         in_features=mod.in_features,
         out_features=mod.out_features,
         driveit_ordering=driveit_ordering,
@@ -266,17 +266,17 @@ def set_all_descendant_attrs(
     name,
     value,
 ):
-    r"""Sets all IdiotLinear descendants' attrname to attrvalue.
+    r"""Sets all DriveitLinear descendants' attrname to attrvalue.
 
     Args:
         mod: nn.Module
-            Top-level network that contains all IdiotLinear modules.
+            Top-level network that contains all DriveitLinear modules.
         name: str
             Name of attribute we want to modify.
         value: str
             Value we want to apply to the attribute. Value is deepcopied.
     """
-    if type(mod) == IdiotLinear:
+    if type(mod) == DriveitLinear:
         assert hasattr(mod, name)
         setattr(mod, name, deepcopy(value))
     for _, child in mod.named_children():
@@ -292,14 +292,14 @@ def get_descendant(
     Args:
 
         mod: nn.Module
-            Top-level network that contains the desired IdiotLinear module.
+            Top-level network that contains the desired DriveitLinear module.
         fullname: str
-            Search str applied to IdiotLinear module _driveit_name attribute.
+            Search str applied to DriveitLinear module _driveit_name attribute.
 
     Returns:
         reference to Module if found, None otherwise.
     """
-    if type(mod) == IdiotLinear and mod._driveit_name == fullname:
+    if type(mod) == DriveitLinear and mod._driveit_name == fullname:
         return mod
     for name, child in mod.named_children():
         maybe = get_descendant(child, fullname)
